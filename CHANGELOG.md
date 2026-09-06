@@ -1,5 +1,17 @@
 KnowledgeWorks Changelog
 
+2.0.0 - September 6, 2026
+
+Added
+
+- Added DocSweep for checking spreadsheet-driven product document lists for updated files.
+- Added a dedicated DocSweep launcher to the KnowledgeWorks hub.
+
+Changed
+
+- Aligned the DocSweep window title bar with the KnowledgeWorks and ArticleFlow window design.
+- Prepared the stable KnowledgeWorks 2.0.0 release.
+
 2.0.0-beta.1 - August 31, 2026
 
 Added
