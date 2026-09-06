@@ -2,6 +2,8 @@ import { BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { getRuntimeIcon } from './runtime-icon.js'
 
+const WINDOWS_TITLE_BAR_OVERLAY_HEIGHT = 35
+
 /**
  * @param {BrowserWindow | undefined} window
  * @returns {BrowserWindow | undefined}
@@ -93,7 +95,7 @@ export async function createLogsBrowserWindow({ devServerUrl, electronDirectory,
           titleBarOverlay: {
             color: '#101617',
             symbolColor: '#f4f2ec',
-            height: 36,
+            height: WINDOWS_TITLE_BAR_OVERLAY_HEIGHT,
           },
         }),
     webPreferences: {
@@ -147,7 +149,7 @@ export async function createArticleFlowBrowserWindow({ devServerUrl, electronDir
           titleBarOverlay: {
             color: '#101617',
             symbolColor: '#f4f2ec',
-            height: 36,
+            height: WINDOWS_TITLE_BAR_OVERLAY_HEIGHT,
           },
         }),
     webPreferences: {
@@ -207,7 +209,7 @@ export async function createDocSweepBrowserWindow({
           titleBarOverlay: {
             color: '#101617',
             symbolColor: '#f4f2ec',
-            height: 36,
+            height: WINDOWS_TITLE_BAR_OVERLAY_HEIGHT,
           },
         }),
     webPreferences: {
@@ -261,7 +263,7 @@ export async function createHubBrowserWindow({ devServerUrl, electronDirectory, 
           titleBarOverlay: {
             color: '#101617',
             symbolColor: '#f4f2ec',
-            height: 36,
+            height: WINDOWS_TITLE_BAR_OVERLAY_HEIGHT,
           },
         }),
     backgroundColor: '#202426',
