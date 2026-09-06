@@ -40,6 +40,7 @@ export type CustomAttributesLocators = {
   dialog: Locator
   doneButton: Locator
   editButton: Locator
+  sectionHeading: Locator
 }
 
 export type ArticleFolderLocators = {
@@ -161,6 +162,8 @@ export function getCustomAttributesLocators(articlePage: Page): CustomAttributes
     doneButton: dialog.getByTestId('pop-up-window-button-custom-attributes-done'),
 
     editButton: articlePage.getByTestId('button-article-custom-attribute-edit'),
+
+    sectionHeading: articlePage.getByRole('heading', { name: /custom attributes/i }),
   }
 }
 

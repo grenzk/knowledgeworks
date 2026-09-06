@@ -204,18 +204,25 @@ async function openCustomAttributes(articlePage: Page): Promise<void> {
   }
 
   for (let attempt = 1; attempt <= customAttributesOpenAttempts; attempt += 1) {
-    const { editButton } = getCustomAttributesLocators(articlePage)
-
-    await requireUniqueLocator(editButton, 'Custom Attributes Edit button')
-    await editButton.scrollIntoViewIfNeeded()
-    await editButton.click({ force: true })
-
     try {
-      await dialog.waitFor({ state: 'visible', timeout: customAttributesOpenTimeoutMs })
+      const { dialog: currentDialog, editButton, sectionHeading } = getCustomAttributesLocators(articlePage)
+
+      await requireUniqueLocator(sectionHeading, 'Custom Attributes heading')
+      await sectionHeading.scrollIntoViewIfNeeded()
+      await sectionHeading.hover()
+      await editButton.waitFor({ state: 'visible', timeout: customAttributesOpenTimeoutMs })
+      await requireUniqueLocator(editButton, 'Custom Attributes Edit button')
+      await editButton.click({ timeout: customAttributesOpenTimeoutMs })
+      await currentDialog.waitFor({ state: 'visible', timeout: customAttributesOpenTimeoutMs })
+
       return
-    } catch {
+    } catch (error) {
       if (attempt === customAttributesOpenAttempts) {
-        throw new Error('eGain did not open the Custom Attributes dialog after 3 attempts.')
+        const reason = error instanceof Error ? error.message : String(error)
+
+        throw new Error(
+          `eGain did not open the Custom Attributes dialog after ${customAttributesOpenAttempts} attempts. Last error: ${reason}`,
+        )
       }
 
       await articlePage.waitForTimeout(articleUiPollIntervalMs)
