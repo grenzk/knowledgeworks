@@ -12,6 +12,7 @@ import {
 import { collectExistingArticleTitles } from './collect-existing-article-titles.ts'
 import type { ArticleImportPlan } from './create-import-plan.ts'
 import { ensureArticleEditMode } from './ensure-article-edit-mode.ts'
+import { openNewArticleDialogInFolder } from './open-new-article-dialog.ts'
 import {
   ensureFolderPath,
   getSelectedFolderReference,
@@ -72,7 +73,7 @@ export async function prepareArticleTemplate(
   const templateCreated = !existingTitles.has(articleFlowTemplateTitle)
 
   if (templateCreated) {
-    await createTemplateArticle(articlePage, rootName)
+    await createTemplateArticle(articlePage, rootName, signal)
   } else {
     await openArticleFromList(articlePage, articleFlowTemplateTitle)
   }
@@ -165,22 +166,10 @@ export function findImportRoot(selectedFolder: EgainImportParent, rootName: stri
   }
 }
 
-async function createTemplateArticle(articlePage: Page, rootName: string): Promise<void> {
-  const { createArticleButton } = getArticlePageActionLocators(articlePage)
-  const { dialog, doneButton, folderPathInput, titleInput } = getNewArticleDialogLocators(articlePage)
+async function createTemplateArticle(articlePage: Page, rootName: string, signal?: AbortSignal): Promise<void> {
+  const { dialog, doneButton, titleInput } = getNewArticleDialogLocators(articlePage)
 
-  await requireUniqueLocator(createArticleButton, 'Create article button')
-  await createArticleButton.click()
-  await requireUniqueLocator(dialog, 'New Article dialog')
-  await requireUniqueLocator(folderPathInput, 'New Article folder path')
-
-  const selectedFolderName = await folderPathInput.inputValue()
-
-  if (selectedFolderName !== rootName) {
-    throw new Error(
-      `Expected the template destination to be "${rootName}", but found "${selectedFolderName || 'none'}".`,
-    )
-  }
+  await openNewArticleDialogInFolder(articlePage, rootName, signal)
 
   await requireUniqueLocator(titleInput, 'New Article title input')
   await titleInput.fill(articleFlowTemplateTitle)
