@@ -30,13 +30,12 @@ export class FolderTreeChangedError extends Error {}
 export class FolderTreeStructureError extends Error {}
 
 export async function getFolderTreeEntries(articlePage: Page): Promise<FolderTreeEntry[]> {
-  return articlePage
+  const entries = await articlePage
     .locator(folderTreeRowSelector)
     .filter({ visible: true })
     .evaluateAll(
       (rows, options) => {
         const entries: FolderTreeEntry[] = []
-        const folderIdsByLevel: string[] = []
 
         rows.forEach(row => {
           const levelMatch = row.className.match(/\blevel-(\d+)\b/)
@@ -65,18 +64,36 @@ export async function getFolderTreeEntries(articlePage: Page): Promise<FolderTre
             id,
             level,
             name,
-            parentId: level > 0 ? folderIdsByLevel[level - 1] : undefined,
             selected: row.classList.contains('selected-table-row'),
           })
-
-          folderIdsByLevel[level] = id
-          folderIdsByLevel.length = level + 1
         })
 
         return entries
       },
       { folderCellTestIdPrefix, folderTreeRowSelector },
     )
+
+  return normalizeFolderTreeEntries(entries)
+}
+
+/**
+ * eGain sometimes leaves an earlier copy of a created row at the wrong depth.
+ * Keep the last visible occurrence, as getFolderRowById does, before deriving
+ * ancestry so stale copies cannot create ambiguous selections or parents.
+ */
+export function normalizeFolderTreeEntries(entries: FolderTreeEntry[]): FolderTreeEntry[] {
+  const lastIndexById = new Map(entries.map((entry, index) => [entry.id, index]))
+  const folderIdsByLevel: string[] = []
+
+  return entries
+    .filter((entry, index) => lastIndexById.get(entry.id) === index)
+    .map(entry => {
+      const parentId = entry.level > 0 ? folderIdsByLevel[entry.level - 1] : undefined
+      folderIdsByLevel[entry.level] = entry.id
+      folderIdsByLevel.length = entry.level + 1
+
+      return { ...entry, parentId }
+    })
 }
 
 export async function getDirectChildFolderReferences(
