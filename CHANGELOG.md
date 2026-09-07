@@ -1,5 +1,19 @@
 KnowledgeWorks Changelog
 
+2.0.1 - September 8, 2026
+
+Changed
+
+- Increased the MASW search-result wait for slower responses.
+- Improved Asset Library diagnostics for failed search and loading interactions.
+- Prepared the KnowledgeWorks 2.0.1 release.
+
+Fixed
+
+- Preserved existing spreadsheet data for DocSweep sites that are disabled during a sweep.
+- Fixed PD Cloud verification when its expired-session dialog appears after verification starts.
+- Reset the DocSweep finishing state after a sweep ends.
+
 2.0.0 - September 6, 2026
 
 Added

@@ -261,14 +261,15 @@ contextBridge.exposeInMainWorld('docsweep', {
    *   assetLibrary: string,
    *   pdCloud: string,
    * }>} documents
+   * @param {Array<'Vertiv' | 'Asset Library' | 'PD Cloud' | 'MASW'>} enabledSites
    * @param {string} [outputFilePath]
    * @returns {Promise<{
    *   ok: boolean,
    *   message?: string,
    * }>}
    */
-  saveExcel: (filePath, documents, outputFilePath) =>
-    ipcRenderer.invoke('docsweep:save-excel', filePath, documents, outputFilePath),
+  saveExcel: (filePath, documents, enabledSites, outputFilePath) =>
+    ipcRenderer.invoke('docsweep:save-excel', filePath, documents, enabledSites, outputFilePath),
 
   /**
    * @returns {Promise<{

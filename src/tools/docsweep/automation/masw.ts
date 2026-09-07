@@ -88,7 +88,7 @@ async function waitForSearchComplete(page: Page, controlNumber: string): Promise
       expected: controlNumber,
     },
     {
-      timeout: 30_000,
+      timeout: 60_000,
     },
   )
 }

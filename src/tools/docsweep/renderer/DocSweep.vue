@@ -348,7 +348,9 @@ async function saveSweepResults(): Promise<boolean> {
     pdCloud: document.pdCloud,
   }))
 
-  const result = await window.docsweep.saveExcel(excelFile.value, documentsToSave)
+  const enabledSites = sites.value.filter(site => site.enabled).map(site => site.name)
+
+  const result = await window.docsweep.saveExcel(excelFile.value, documentsToSave, enabledSites)
 
   if (!result.ok) {
     console.error('DocSweep Excel save failed:', result.message)
@@ -374,7 +376,14 @@ async function saveSweepResultsAs(): Promise<boolean> {
     pdCloud: document.pdCloud,
   }))
 
-  const saveResult = await window.docsweep.saveExcel(excelFile.value, documentsToSave, dialogResult.filePath)
+  const enabledSites = sites.value.filter(site => site.enabled).map(site => site.name)
+
+  const saveResult = await window.docsweep.saveExcel(
+    excelFile.value,
+    documentsToSave,
+    enabledSites,
+    dialogResult.filePath,
+  )
 
   if (!saveResult.ok) {
     throw new Error(saveResult.message || 'Unable to save Excel file.')
@@ -798,6 +807,7 @@ async function startSweep(): Promise<void> {
   } finally {
     stopElapsedTimer()
     isRunning.value = false
+    isSearchFinishing.value = false
   }
 }
 </script>

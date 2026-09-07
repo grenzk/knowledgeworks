@@ -110,7 +110,13 @@ async function clearSearch(page: Page): Promise<void> {
    *
    * buttons[0].click()
    */
-  await clearButton.click()
+  try {
+    await clearButton.click()
+  } catch (error) {
+    throw new Error(
+      `Clear button was found but could not be clicked: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
 
   await waitForClearComplete(page)
 }
@@ -121,16 +127,24 @@ async function waitForClearComplete(page: Page): Promise<void> {
    *
    * Wait until all keyword chips are gone.
    */
-  await page.waitForFunction(selector => document.querySelectorAll(selector).length === 0, KEYWORD_SELECTOR, {
-    timeout: 15_000,
-  })
+  try {
+    await page.waitForFunction(selector => document.querySelectorAll(selector).length === 0, KEYWORD_SELECTOR, {
+      timeout: 15_000,
+    })
+  } catch (error) {
+    throw new Error(
+      `Clear completed, but existing keyword chips did not disappear within 15s: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    )
+  }
 
   /*
    * Python:
    *
    * self.wait_until_loading_complete()
    */
-  await waitUntilLoadingComplete(page)
+  await waitUntilLoadingComplete(page, 'after clearing the search')
 
   /*
    * Python:
@@ -146,39 +160,53 @@ async function waitForClearComplete(page: Page): Promise<void> {
 }
 
 async function waitForSearchComplete(page: Page, controlNumber: string): Promise<void> {
-  await page.waitForFunction(
-    ({ selector, expected }) => {
-      const elements = document.querySelectorAll(selector)
+  try {
+    await page.waitForFunction(
+      ({ selector, expected }) => {
+        const elements = document.querySelectorAll(selector)
 
-      if (elements.length === 0) {
-        return false
-      }
+        if (elements.length === 0) {
+          return false
+        }
 
-      const title = elements[0]?.getAttribute('title')?.trim()
+        const title = elements[0]?.getAttribute('title')?.trim()
 
-      return title?.toUpperCase() === expected.toUpperCase()
-    },
-    {
-      selector: KEYWORD_SELECTOR,
-      expected: controlNumber,
-    },
-    {
-      timeout: 15_000,
-    },
-  )
+        return title?.toUpperCase() === expected.toUpperCase()
+      },
+      {
+        selector: KEYWORD_SELECTOR,
+        expected: controlNumber,
+      },
+      {
+        timeout: 15_000,
+      },
+    )
+  } catch (error) {
+    throw new Error(
+      `Search result for "${controlNumber}" did not appear within 15s: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    )
+  }
 
-  await waitUntilLoadingComplete(page)
+  await waitUntilLoadingComplete(page, `after searching for "${controlNumber}"`)
 }
 
-async function waitUntilLoadingComplete(page: Page): Promise<void> {
+async function waitUntilLoadingComplete(page: Page, context: string): Promise<void> {
   /*
    * Python:
    *
    * "Loading..." not in driver.page_source
    */
-  await page.waitForFunction(() => !document.body.innerText.includes('Loading...'), undefined, {
-    timeout: 15_000,
-  })
+  try {
+    await page.waitForFunction(() => !document.body.innerText.includes('Loading...'), undefined, {
+      timeout: 15_000,
+    })
+  } catch (error) {
+    throw new Error(
+      `Asset Library was still loading ${context} after 15s: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
 }
 
 async function hasNoResults(page: Page): Promise<boolean> {

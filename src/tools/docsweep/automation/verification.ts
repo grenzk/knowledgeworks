@@ -13,6 +13,8 @@ type SiteDefinition = {
   matchUrl: string
 }
 
+const PD_CLOUD_READY_TIMEOUT_MS = 30_000
+
 const SITE_DEFINITIONS: SiteDefinition[] = [
   {
     name: 'Vertiv',
@@ -125,12 +127,34 @@ async function verifyAssetLibrary(page: Page): Promise<DocSweepSiteVerification>
 }
 
 async function verifyPDCloud(page: Page): Promise<DocSweepSiteVerification> {
-  const advancedSearchButton = page.locator("a[aria-label*='Advanced Search']").first()
-
   try {
+    const expiredDialog = page
+      .locator('.AFPopupSelector')
+      .filter({ hasText: 'The page has expired. Click OK to continue.' })
+      .first()
+    const advancedSearchButton = page.locator("a[aria-label*='Advanced Search']").first()
+    const readyOrExpired = advancedSearchButton.or(expiredDialog).first()
+
+    await readyOrExpired.waitFor({
+      state: 'visible',
+      timeout: PD_CLOUD_READY_TIMEOUT_MS,
+    })
+
+    if (await expiredDialog.isVisible()) {
+      const okButton = expiredDialog.locator('button[_afrpdo="ok"]').first()
+
+      await okButton.waitFor({ state: 'visible', timeout: PD_CLOUD_READY_TIMEOUT_MS })
+      await okButton.click()
+
+      await expiredDialog.waitFor({
+        state: 'hidden',
+        timeout: PD_CLOUD_READY_TIMEOUT_MS,
+      })
+    }
+
     await advancedSearchButton.waitFor({
       state: 'visible',
-      timeout: 10_000,
+      timeout: PD_CLOUD_READY_TIMEOUT_MS,
     })
 
     return {

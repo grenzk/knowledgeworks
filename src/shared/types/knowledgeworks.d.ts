@@ -158,6 +158,7 @@ export type DocSweepApi = {
       assetLibrary: string
       pdCloud: string
     }>,
+    enabledSites: Array<'Vertiv' | 'Asset Library' | 'PD Cloud' | 'MASW'>,
     outputFilePath?: string,
   ) => Promise<{
     ok: boolean
