@@ -270,7 +270,7 @@ contextBridge.exposeInMainWorld('docsweep', {
    */
   saveExcel: (filePath, documents, enabledSites, outputFilePath) =>
     ipcRenderer.invoke('docsweep:save-excel', filePath, documents, enabledSites, outputFilePath),
-  
+
   /**
    * @returns {Promise<{
    *   canceled: boolean,
