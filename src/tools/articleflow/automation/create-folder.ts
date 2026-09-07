@@ -6,6 +6,7 @@ import {
 } from '../../../shared/egain/editor/get-article-editor-locators.ts'
 import {
   cacheFolderReference,
+  folderActionTimeoutMs,
   folderUiPollIntervalMs,
   folderUiTimeoutMs,
   formatFolderPath,
@@ -96,11 +97,11 @@ async function openCreateFolderForm(
       }
 
       if (!(await addFolderMenuItem.isVisible())) {
-        await contextMenuButton.click({ timeout: folderUiTimeoutMs })
+        await contextMenuButton.click({ timeout: folderActionTimeoutMs })
       }
 
       await waitForFolderMenuItem(articlePage, freshParent.folder, addFolderMenuItem, signal)
-      await addFolderMenuItem.click({ timeout: folderUiTimeoutMs })
+      await addFolderMenuItem.click({ timeout: folderActionTimeoutMs })
 
       return freshParent.folder
     },
@@ -114,7 +115,7 @@ async function waitForFolderMenuItem(
   menuItem: Locator,
   signal?: AbortSignal,
 ): Promise<void> {
-  const deadline = Date.now() + folderUiTimeoutMs
+  const deadline = Date.now() + folderActionTimeoutMs
 
   while (Date.now() < deadline) {
     throwIfAutomationCancelled(signal)

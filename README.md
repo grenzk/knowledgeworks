@@ -1,106 +1,168 @@
 # KnowledgeWorks
 
-KnowledgeWorks is a desktop automation hub for eGain workflows. Its first tool,
-MediaBridge, links documents, images, and articles from source systems into the
-eGain article editor.
+KnowledgeWorks is a desktop automation hub for repeatable eGain content workflows. It provides one controlled browser,
+one shared log console, and focused tools for linking content, importing articles, and checking document revisions.
 
-## What It Does
+## Included Tools
 
-- Opens a shared controlled Chromium browser for KnowledgeWorks tools.
-- Opens or focuses MediaBridge from a compact tool hub.
-- Counts links in the article editor source, including matching document links.
-- Runs the existing media-linking workflow that inserts media server document
-  links into matching article text and adds the selected document class to those
-  anchors.
-- Provides a compact floating toolbar inspired by QuickTime and snipping-tool
-  controls.
+### MediaBridge
+
+Links prepared content in the eGain article editor to documents, images, and articles. Supported media includes PDF,
+Word, Excel, PowerPoint, JPG, PNG, and GIF files. MediaBridge can count linked and unlinked targets before running and
+preserves supported source attributes when it restores the article HTML.
+
+### ArticleFlow
+
+Turns a local folder hierarchy into eGain folders and articles. Each `.htm` or `.html` file becomes an article in its
+corresponding folder. Imports can check in or publish articles, reuse custom attributes from a prepared template, skip
+existing articles, and resume after an interrupted run.
+
+### DocSweep
+
+Reads document control numbers from an Excel workbook, checks enabled document sources for matching revisions, and
+writes the collected results back to Excel. Supported sources currently include Vertiv, Asset Library, PD Cloud, and
+MASW.
+
+## Using KnowledgeWorks
+
+1. Open KnowledgeWorks.
+2. Select **Launch browser** and sign in to the sites required by your workflow.
+3. Return to the hub and open MediaBridge, ArticleFlow, or DocSweep.
+4. Use the shared log window when an action needs more detail than the tool status bar provides.
+
+KnowledgeWorks keeps its controlled browser profile under the application's user-data directory in `browser-profile`.
+The profile persists between launches so authenticated sessions can be reused. Closing KnowledgeWorks does not close
+the controlled browser unless `MEDIABRIDGE_CLOSE_BROWSER_ON_EXIT` is set to `1`.
+
+Only one KnowledgeWorks application instance runs at a time. Opening it again focuses the existing hub.
+
+## Tool Requirements
+
+### MediaBridge
+
+Open the eGain article editor and, for document or image linking, the media server in the controlled browser. Select the
+required linking mode in MediaBridge before counting or running the automation. Article linking runs entirely in the
+eGain editor and uses article IDs prepared in anchor `href` values.
+
+### ArticleFlow
+
+Select the local source folder and the intended destination folder in eGain. ArticleFlow previews the complete source
+structure before making changes. The source folder becomes a child of the currently selected eGain folder.
+
+Prepare the template when prompted, configure its custom attributes in eGain, then continue the import. Choose **Check
+in** or **Publish** before running. Existing folders are reused and exact existing article titles are skipped, making a
+rerun safe after an interruption.
+
+### DocSweep
+
+Select an `.xlsx` workbook with document control numbers in column A, starting at row 2. Open and sign in to each enabled
+source site in the controlled browser, then verify the sites before starting the sweep. Results can be saved to the
+source workbook or recovered to a new workbook if saving fails.
 
 ## Development
 
+### Prerequisites
+
+- Node.js 22.18 or newer
+- npm
+- Chrome, Edge, or Chromium with remote debugging support
+
+Install dependencies and start the hub in development mode:
+
 ```sh
 npm install
-npm run dev
+npm run dev:hub
 ```
 
-Use the browser button in the KnowledgeWorks Hub, then open MediaBridge. Open the
-article page and media page in the controlled browser before counting links or
-running the script.
+`npm run dev` starts the same application without explicitly requesting the hub window. Use the hub browser button to
+start or reconnect to the controlled browser.
 
-The planned architecture and incremental migration are documented in
-[KnowledgeWorks Design](docs/KNOWLEDGEWORKS_DESIGN.md).
+Copy `.env.example` to `.env` when a local override is needed. Empty values use the defaults below.
 
-You can still run the original command-line automation with:
+| Variable                                 | Purpose                                                       | Default                     |
+| ---------------------------------------- | ------------------------------------------------------------- | --------------------------- |
+| `MEDIABRIDGE_CDP_PORT`                   | Controlled browser debugging port                             | `9222`                      |
+| `MEDIABRIDGE_CHROME_PATH`                | Windows browser executable override                           | Bundled or detected browser |
+| `MEDIABRIDGE_CLOSE_BROWSER_ON_EXIT`      | Close a browser launched by KnowledgeWorks when the app exits | Disabled                    |
+| `MEDIABRIDGE_BROWSER_STARTUP_TIMEOUT_MS` | Maximum browser startup wait                                  | `30000`                     |
+
+The `MEDIABRIDGE_` prefix is retained for compatibility with existing installations.
+
+## Command-Line Workflows
+
+Run MediaBridge directly with `LINKING_MODE` set to the required mode:
 
 ```sh
-npm run script:media-linking
+LINKING_MODE=pdf npm run script:media-linking
 ```
 
-That command connects to `MEDIABRIDGE_CDP_PORT`, or port `9222` by default.
-
-The ArticleFlow prototype reads a filesystem taxonomy and prints its import plan
-without changing eGain:
+Preview an ArticleFlow import without changing eGain:
 
 ```sh
-npm run script:articleflow -- --root "Sample Product"
+npm run script:articleflow -- --root "/path/to/Product"
 ```
 
-The selected root directory is created under the eGain folder currently selected
-in the controlled browser. ArticleFlow recreates missing folders recursively and
-creates an article for each `.htm` or `.html` file. Execution is opt-in, and
-check-in is the default final action:
+Execute the import after selecting the intended eGain parent folder in the controlled browser:
 
 ```sh
-npm run script:articleflow -- --root "Sample Product" --action check-in --execute
+npm run script:articleflow -- --root "/path/to/Product" --action check-in --execute
 ```
-
-Before execution, select the intended parent folder in the controlled eGain
-browser without selecting an article. ArticleFlow uses that folder's context
-menu when it needs to add a direct child, then verifies the destination shown in
-the New Article dialog before creating each article.
-
-ArticleFlow scans every article-list page in each destination folder before
-creating content. An exact title match is treated as an existing article and is
-skipped, so interrupted imports can be run again without overwriting completed
-articles.
 
 Use `--action publish` only when every planned article should be published.
 
-## Testing
-
-Run the focused automation unit tests with:
+## Quality Checks
 
 ```sh
-npm test
-```
-
-To display every individual test in the terminal, run:
-
-```sh
-npm run test:verbose
-```
-
-Run the strict TypeScript check for the KnowledgeWorks renderer, Electron code,
-shared modules, MediaBridge, ArticleFlow, and tests with:
-
-```sh
+npm run format:check
 npm run typecheck
+npm test
+npm run build
 ```
 
-Use Node.js 22.18 or newer when running the MediaBridge command-line automation
-directly from source. Packaged applications use the Node.js runtime embedded in
-Electron.
-
-The suite covers linking mode configuration, target classification, linked-state
-detection, and skipped-target log formatting. Browser-driven eGain workflows
-still require manual testing against the controlled browser.
+Use `npm run test:verbose` to display each individual test. Unit tests cover core target classification, linked-state
+detection, import planning, and log formatting. Browser-driven eGain workflows still require manual smoke testing
+against the controlled browser.
 
 ## Desktop Builds
 
-```sh
-npm run package
-npm run dist:mac
-npm run dist:win
+| Command            | Output                                        |
+| ------------------ | --------------------------------------------- |
+| `npm run package`  | Unpacked application for the current platform |
+| `npm run dist:mac` | macOS DMG and ZIP                             |
+| `npm run dist:win` | Windows x64 NSIS installer and ZIP            |
+
+Build output is written to `release/`.
+
+Windows production builds bundle Chrome for Testing so enterprise Chrome policies do not block remote debugging. Place
+the complete Windows x64 browser in `vendor/chrome-win64/` before packaging; the expected executable is
+`vendor/chrome-win64/chrome.exe`. Cross-building the Windows installer on macOS may require Wine, so the official
+Windows installer should preferably be built and smoke-tested on Windows.
+
+## Releases and Updates
+
+Packaged Windows builds check the `grenzk/mediabridge-releases` GitHub Releases repository for updates. The legacy
+repository name is intentional and preserves the existing updater configuration. Upload these artifacts from a Windows
+build for each release:
+
+- `KnowledgeWorks Setup <version>.exe`
+- `KnowledgeWorks Setup <version>.exe.blockmap`
+- `latest.yml`
+
+The Windows ZIP is optional. Publish the GitHub Release only after all required updater assets finish uploading. Automatic
+updates are currently disabled on macOS.
+
+## Project Structure
+
+```text
+electron/              Electron main process, windows, IPC, browser, logs, and updater
+src/app/renderer/      KnowledgeWorks hub and shared log console
+src/shared/            Shared browser, configuration, cancellation, and type modules
+src/tools/articleflow/ ArticleFlow automation, renderer, and command-line entry point
+src/tools/mediabridge/ MediaBridge automation, renderer, helpers, and command-line entry point
+src/tools/docsweep/    DocSweep automation and renderer
+vendor/chrome-win64/   Windows Chrome for Testing bundle used during packaging
 ```
 
-Electron supports Windows and macOS. Cross-building Windows installers from
-macOS may require additional signing or packaging tools depending on the target.
+Architecture decisions and the incremental hub migration are documented in
+[KnowledgeWorks Design](docs/KNOWLEDGEWORKS_DESIGN.md). Visual tokens and interaction rules are documented in
+[Design System](docs/design-system.md). Release history is maintained in [CHANGELOG.md](CHANGELOG.md).

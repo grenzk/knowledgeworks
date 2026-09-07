@@ -18,6 +18,7 @@ import {
 
 const activeFolderLoaderSelector = '[data-testid="loader"].loader-container-show:visible'
 const folderTreeRetryLimit = 3
+export const folderActionTimeoutMs = 8000
 export const folderUiTimeoutMs = 60000
 export const folderUiPollIntervalMs = 100
 const folderSelectionSettleDelayMs = 500
@@ -198,7 +199,7 @@ export async function selectResolvedFolder(
     throw new FolderTreeChangedError(`Folder "${freshDestination.folder.name}" disappeared before selection.`)
   }
 
-  await cell.click({ timeout: folderUiTimeoutMs })
+  await cell.click({ timeout: folderActionTimeoutMs })
   await waitForFolderSelection(articlePage, freshDestination.folder, signal)
   await articlePage.waitForTimeout(folderSelectionSettleDelayMs)
   await waitForFolderUiReady(articlePage, signal)
@@ -255,7 +256,7 @@ async function expandResolvedFolder(
     return current
   }
 
-  await expandButton.click({ timeout: folderUiTimeoutMs })
+  await expandButton.click({ timeout: folderActionTimeoutMs })
   await waitForFolderExpansion(articlePage, current.folder, signal)
 
   return resolveVisibleFolder(articlePage, current.folder)
@@ -339,7 +340,7 @@ async function refreshFolderChildren(
   const { collapseButton } = getArticleFolderLocators(current.row, current.folder.name)
 
   if (await collapseButton.isVisible()) {
-    await collapseButton.click({ timeout: folderUiTimeoutMs })
+    await collapseButton.click({ timeout: folderActionTimeoutMs })
 
     const deadline = Date.now() + folderUiTimeoutMs
 

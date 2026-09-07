@@ -8,6 +8,10 @@ import {
   type FolderTraversalCache,
 } from '../../../src/tools/articleflow/automation/ensure-folder-path.ts'
 import type { Page } from 'playwright'
+import {
+  isFolderSelectionComplete,
+  normalizeFolderTreeEntries,
+} from '../../../src/tools/articleflow/automation/folder-tree-state.ts'
 
 type FolderTreeEntryFixture = EgainFolderReference & {
   level: number
@@ -28,6 +32,7 @@ function createFolderTreePage(entries: FolderTreeEntryFixture[]): Page {
 
   return {
     locator: vi.fn((selector: string) => (selector.includes('loader') ? activeLoaders : folderRows)),
+    url: () => 'https://example.test/folder/manuals',
   } as unknown as Page
 }
 
@@ -69,6 +74,38 @@ describe('ensureFolderPath', () => {
 })
 
 describe('getSelectedFolderReference', () => {
+  it('uses the final occurrence of a duplicated selected row and its actual ancestors', async () => {
+    const articlePage = createFolderTreePage([
+      { id: 'archive', level: 0, name: 'Archive', selected: false },
+      { id: 'manuals', level: 1, name: 'Manuals', selected: true },
+      { id: 'product', level: 1, name: 'Sample Product', selected: false },
+      { id: 'manuals', level: 2, name: 'Manuals', selected: true },
+    ])
+
+    await expect(getSelectedFolderReference(articlePage)).resolves.toEqual({
+      ancestorPath: [
+        { id: 'archive', name: 'Archive' },
+        { id: 'product', name: 'Sample Product' },
+      ],
+      id: 'manuals',
+      name: 'Manuals',
+    })
+    await expect(isFolderSelectionComplete(articlePage, 'manuals')).resolves.toBe(true)
+  })
+
+  it('does not let a stale duplicate supply ancestry to other rows', () => {
+    const entries = normalizeFolderTreeEntries([
+      { id: 'archive', level: 0, name: 'Archive', selected: false },
+      { id: 'product', level: 1, name: 'Product', selected: false },
+      { id: 'manuals', level: 1, name: 'Manuals', selected: true },
+      { id: 'other', level: 2, name: 'Other', selected: false },
+      { id: 'manuals', level: 2, name: 'Manuals', selected: true },
+    ])
+
+    expect(entries.find(entry => entry.id === 'other')?.parentId).toBe('product')
+    expect(entries.filter(entry => entry.id === 'manuals')).toHaveLength(1)
+  })
+
   it('returns the selected folder with its visible ancestor path', async () => {
     const articlePage = createFolderTreePage([
       { id: 'archive', level: 0, name: 'Zzz Archive', selected: false },

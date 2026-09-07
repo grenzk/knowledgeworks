@@ -13,6 +13,7 @@ import {
 import { collectExistingArticleTitles } from './collect-existing-article-titles.ts'
 import type { ArticleImportEntry, ArticleImportPlan } from './create-import-plan.ts'
 import { ensureArticleEditMode } from './ensure-article-edit-mode.ts'
+import { openNewArticleDialogInFolder } from './open-new-article-dialog.ts'
 import {
   ensureFolderPath,
   getSelectedFolderReference,
@@ -193,7 +194,7 @@ export async function runArticleImport(
           )
           existingTitles.delete(options.articleTemplateTitle)
         } else {
-          await createArticle(articlePage, article, completionAction)
+          await createArticle(articlePage, article, completionAction, signal)
         }
 
         existingTitles.add(article.title)
@@ -251,6 +252,7 @@ async function createArticle(
   articlePage: Page,
   article: ArticleImportEntry,
   completionAction: ArticleCompletionAction,
+  signal?: AbortSignal,
 ) {
   const html = await readArticleHtml(article)
   const destinationFolderName = article.folderPath.at(-1)
@@ -259,22 +261,9 @@ async function createArticle(
     throw new Error(`The article has no destination folder: ${article.relativeSourcePath}`)
   }
 
-  const { createArticleButton } = getArticlePageActionLocators(articlePage)
-  const { dialog, doneButton, folderPathInput, titleInput } = getNewArticleDialogLocators(articlePage)
+  const { dialog, doneButton, titleInput } = getNewArticleDialogLocators(articlePage)
 
-  await requireUniqueLocator(createArticleButton, 'Create article button')
-  await createArticleButton.click()
-
-  await requireUniqueLocator(dialog, 'New Article dialog')
-  await requireUniqueLocator(folderPathInput, 'New Article folder path')
-
-  const selectedFolderName = await folderPathInput.inputValue()
-
-  if (selectedFolderName !== destinationFolderName) {
-    throw new Error(
-      `Expected the New Article folder to be "${destinationFolderName}", but found "${selectedFolderName || 'none'}".`,
-    )
-  }
+  await openNewArticleDialogInFolder(articlePage, destinationFolderName, signal)
 
   await requireUniqueLocator(titleInput, 'New Article title input')
   await titleInput.fill(article.title)
