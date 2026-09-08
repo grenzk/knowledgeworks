@@ -1,42 +1,16 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import InputText from 'primevue/inputtext'
 import ToggleSwitch from 'primevue/toggleswitch'
 import Dialog from 'primevue/dialog'
-
-type DocSweepSiteStatus = 'Not connected' | 'Verifying' | 'Ready' | 'Error'
-
-type DocSweepSiteName = 'Vertiv' | 'Asset Library' | 'PD Cloud' | 'MASW'
-
-type FooterStatus = 'ready' | 'warning' | 'error'
-
-type SaveResultsChoice = 'save' | 'discard' | 'continue'
-
-type DocSweepSite = {
-  name: DocSweepSiteName
-  status: DocSweepSiteStatus
-  url: string
-  matchUrl: string
-  enabled: boolean
-}
-
-type SiteSummary = {
-  site: string
-  found: number
-  notFound: number
-  errors: number
-  total: number
-  elapsedMs: number
-}
-
-type ExcelDocument = {
-  row: number
-  controlNumber: string
-  masw: string
-  vertiv: string
-  assetLibrary: string
-  pdCloud: string
-}
+import { useDocSweepTimer } from '../composables/useDocSweepTimer'
+import type {
+  DocSweepSite,
+  ExcelDocument,
+  FooterStatus,
+  SaveResultsChoice,
+  SiteSummary,
+} from '../types'
 
 const excelFile = ref('')
 const documents = ref<ExcelDocument[]>([])
@@ -50,8 +24,6 @@ const showCancelDialog = ref(false)
 const showSaveResultsDialog = ref(false)
 const showSaveErrorDialog = ref(false)
 const isSearchFinishing = ref(false)
-const totalElapsedMs = ref(0)
-const elapsedTick = ref(Date.now())
 
 const sweepStatus = ref('Select an Excel file.')
 const currentSite = ref('-')
@@ -62,9 +34,6 @@ const sweepDocuments = ref<ExcelDocument[]>([])
 const saveResultsChoice = ref<SaveResultsChoice | null>(null)
 let saveResultsResolver: ((choice: SaveResultsChoice) => void) | null = null
 let saveErrorResolver: ((saved: boolean) => void) | null = null
-let totalStartTime = 0
-let elapsedTimer: ReturnType<typeof setInterval> | null = null
-const siteStartTimes = new Map<string, number>()
 const footerStatus = ref<FooterStatus>('warning')
 
 const sites = ref<DocSweepSite[]>([
@@ -133,6 +102,26 @@ const summary = ref<SiteSummary[]>([
     elapsedMs: 0,
   },
 ])
+
+const {
+  totalElapsedMs,
+  elapsedTick,
+  startElapsedTimer,
+  stopElapsedTimer,
+  startSiteTimer,
+  stopSiteTimer,
+  clearSiteTimers,
+  formatElapsed,
+} = useDocSweepTimer((siteName, elapsedMs) => {
+  summary.value = summary.value.map(item =>
+    item.site === siteName
+      ? {
+          ...item,
+          elapsedMs,
+        }
+      : item,
+  )
+})
 
 const progress = computed(() => {
   if (totalCount.value === 0) {
@@ -513,91 +502,6 @@ function waitForSaveResultsChoice(): Promise<SaveResultsChoice> {
   })
 }
 
-function formatElapsed(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000)
-
-  const hours = Math.floor(totalSeconds / 3600)
-  const minutes = Math.floor((totalSeconds % 3600) / 60)
-  const seconds = totalSeconds % 60
-
-  if (hours > 0) {
-    return `${hours.toString().padStart(2, '0')}:${minutes
-      .toString()
-      .padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
-  }
-
-  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
-}
-
-function startElapsedTimer(): void {
-  totalStartTime = Date.now()
-  totalElapsedMs.value = 0
-  elapsedTick.value = Date.now()
-
-  if (elapsedTimer) {
-    clearInterval(elapsedTimer)
-  }
-
-  elapsedTimer = setInterval(() => {
-    elapsedTick.value = Date.now()
-
-    if (totalStartTime > 0) {
-      totalElapsedMs.value = Date.now() - totalStartTime
-    }
-
-    if (currentSite.value !== '-') {
-      const siteStartTime = siteStartTimes.get(currentSite.value)
-
-      if (siteStartTime) {
-        const elapsedMs = Date.now() - siteStartTime
-
-        summary.value = summary.value.map(item =>
-          item.site === currentSite.value
-            ? {
-                ...item,
-                elapsedMs,
-              }
-            : item,
-        )
-      }
-    }
-  }, 1000)
-}
-
-function stopElapsedTimer(): void {
-  if (elapsedTimer) {
-    clearInterval(elapsedTimer)
-    elapsedTimer = null
-  }
-
-  elapsedTick.value = Date.now()
-
-  if (totalStartTime > 0) {
-    totalElapsedMs.value = Date.now() - totalStartTime
-  }
-
-  if (currentSite.value !== '-') {
-    const siteStartTime = siteStartTimes.get(currentSite.value)
-
-    if (siteStartTime) {
-      const elapsedMs = Date.now() - siteStartTime
-
-      summary.value = summary.value.map(item =>
-        item.site === currentSite.value
-          ? {
-              ...item,
-              elapsedMs,
-            }
-          : item,
-      )
-    }
-  }
-}
-
-onUnmounted(() => {
-  stopElapsedTimer()
-})
-
 async function startSweep(): Promise<void> {
   if (!canStartSweep.value || isRunning.value) {
     footerStatus.value = 'warning'
@@ -606,7 +510,7 @@ async function startSweep(): Promise<void> {
 
   isRunning.value = true
   startElapsedTimer()
-  siteStartTimes.clear()
+  clearSiteTimers()
   footerStatus.value = 'warning'
   isSweepInitialized.value = false
   isCancelRequested.value = false
@@ -654,8 +558,7 @@ async function startSweep(): Promise<void> {
 
     for (let siteIndex = 0; siteIndex < enabledSites.length; siteIndex++) {
       const site = enabledSites[siteIndex]
-      const siteStartTime = Date.now()
-      siteStartTimes.set(site.name, siteStartTime)
+      startSiteTimer(site.name)
       currentSite.value = site.name
 
       sweepStatus.value = `Starting ${site.name} sweep...`
@@ -770,16 +673,7 @@ async function startSweep(): Promise<void> {
         }
       }
 
-      const siteElapsedMs = Date.now() - siteStartTime
-
-      summary.value = summary.value.map(item =>
-        item.site === site.name
-          ? {
-              ...item,
-              elapsedMs: siteElapsedMs,
-            }
-          : item,
-      )
+      stopSiteTimer(site.name)
 
       sweepStatus.value = `${site.name} sweep completed for ${sweepDocuments.value.length} control number(s).`
     }
