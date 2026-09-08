@@ -1,58 +1,30 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-
-type SourceTreeNode = {
-  children: SourceTreeNode[]
-  kind: 'file' | 'folder'
-  name: string
-  path: string[]
-}
+import {
+  buildSourceTree,
+  getSourceTreeNodeKey,
+  getSourceTreeSelectionState as resolveSourceTreeSelectionState,
+  type SourceTreeNode,
+} from './source-tree-selection.ts'
 
 const props = defineProps<{
   activePathKey?: string | null
   completedPathKeys?: ReadonlySet<string>
   depth?: number
+  disabled?: boolean
   failedPathKeys?: ReadonlySet<string>
   filePaths?: string[][]
   folderPaths?: string[][]
   nodes?: SourceTreeNode[]
+  selectedPathKeys?: ReadonlySet<string>
+}>()
+
+const emit = defineEmits<{
+  select: [pathKey: string, selected: boolean]
 }>()
 
 const currentDepth = computed(() => props.depth ?? 0)
 const treeNodes = computed(() => props.nodes ?? buildSourceTree(props.folderPaths ?? [], props.filePaths ?? []))
-
-function buildSourceTree(folderPaths: string[][], filePaths: string[][]): SourceTreeNode[] {
-  const roots: SourceTreeNode[] = []
-
-  for (const path of folderPaths) {
-    addPath(roots, path, 'folder')
-  }
-
-  for (const path of filePaths) {
-    addPath(roots, path, 'file')
-  }
-
-  return roots
-}
-
-function addPath(roots: SourceTreeNode[], path: string[], leafKind: SourceTreeNode['kind']) {
-  let siblings = roots
-  const currentPath: string[] = []
-
-  for (const [index, name] of path.entries()) {
-    currentPath.push(name)
-
-    const kind = index === path.length - 1 ? leafKind : 'folder'
-    let node = siblings.find(candidate => candidate.name === name && candidate.kind === kind)
-
-    if (!node) {
-      node = { children: [], kind, name, path: [...currentPath] }
-      siblings.push(node)
-    }
-
-    siblings = node.children
-  }
-}
 
 function getNodeProgressState(node: SourceTreeNode): 'active' | 'completed' | 'failed' | undefined {
   const pathKey = JSON.stringify(node.path)
@@ -69,18 +41,35 @@ function getNodeProgressState(node: SourceTreeNode): 'active' | 'completed' | 'f
     return 'failed'
   }
 }
+
+function handleSelectionChange(node: SourceTreeNode, event: Event) {
+  emit('select', getSourceTreeNodeKey(node), (event.currentTarget as HTMLInputElement).checked)
+}
+
+function getNodeSelectionState(node: SourceTreeNode) {
+  return resolveSourceTreeSelectionState(node, props.selectedPathKeys ?? new Set())
+}
 </script>
 
 <template>
   <ul class="structure-tree" :class="{ root: currentDepth === 0 }">
     <li v-for="node in treeNodes" :key="node.path.join('/')" class="structure-tree-node">
-      <div
+      <label
         class="structure-tree-row"
         :class="getNodeProgressState(node)"
         :data-progress-state="getNodeProgressState(node)"
         :aria-current="getNodeProgressState(node) === 'active' ? 'true' : undefined"
         :title="node.path.join(' > ')"
       >
+        <input
+          class="structure-tree-checkbox"
+          type="checkbox"
+          :checked="getNodeSelectionState(node) === 'checked'"
+          :indeterminate="getNodeSelectionState(node) === 'mixed'"
+          :disabled="disabled"
+          :aria-label="`Include ${node.name}`"
+          @change="handleSelectionChange(node, $event)"
+        />
         <i
           class="pi"
           :class="node.kind === 'file' ? 'pi-file' : currentDepth === 0 ? 'pi-folder-open' : 'pi-folder'"
@@ -102,15 +91,18 @@ function getNodeProgressState(node: SourceTreeNode): 'active' | 'completed' | 'f
           class="pi pi-times structure-tree-status"
           aria-label="Not created"
         />
-      </div>
+      </label>
 
       <SourceStructureTree
         v-if="node.children.length"
         :active-path-key="activePathKey"
         :completed-path-keys="completedPathKeys"
         :depth="currentDepth + 1"
+        :disabled="disabled"
         :failed-path-keys="failedPathKeys"
         :nodes="node.children"
+        :selected-path-keys="selectedPathKeys"
+        @select="(pathKey, selected) => emit('select', pathKey, selected)"
       />
     </li>
   </ul>
@@ -166,6 +158,58 @@ function getNodeProgressState(node: SourceTreeNode): 'active' | 'completed' | 'f
   transition:
     color 120ms ease-out,
     background-color 120ms ease-out;
+}
+
+.structure-tree-row:has(.structure-tree-checkbox:not(:disabled)) {
+  cursor: pointer;
+}
+
+.structure-tree-checkbox {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  margin: 0;
+  appearance: none;
+  place-content: center;
+  color: var(--kw-text-light);
+  border: 1px solid var(--kw-border);
+  border-radius: 3px;
+  background: var(--kw-canvas);
+  cursor: pointer;
+}
+
+.structure-tree-checkbox::before {
+  color: currentColor;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1;
+  content: '';
+}
+
+.structure-tree-checkbox:checked,
+.structure-tree-checkbox:indeterminate {
+  border-color: var(--kw-primary);
+  background: var(--kw-primary);
+}
+
+.structure-tree-checkbox:checked::before {
+  content: '\2713';
+}
+
+.structure-tree-checkbox:indeterminate::before {
+  width: 7px;
+  border-top: 2px solid currentColor;
+}
+
+.structure-tree-checkbox:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.structure-tree-checkbox:focus-visible {
+  outline: 2px solid var(--kw-focus);
+  outline-offset: 2px;
 }
 
 .structure-tree-row > i {

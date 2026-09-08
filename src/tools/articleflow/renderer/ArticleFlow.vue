@@ -2,11 +2,18 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type {
   ArticleFlowCompletionAction,
+  ArticleFlowImportSelection,
   ArticleFlowImportPlan,
   ArticleFlowProgressUpdate,
   ArticleFlowRunResult,
 } from '../../../shared/types/knowledgeworks'
 import SourceStructureTree from './SourceStructureTree.vue'
+import {
+  buildSourceTree,
+  createArticleImportSelection,
+  createFullySelectedSourceTree,
+  setSourceTreeNodeSelected,
+} from './source-tree-selection.ts'
 
 type ArticleFlowStatusTone = 'idle' | 'ready' | 'running' | 'success' | 'error'
 type PrimaryActionButtonState = {
@@ -28,6 +35,7 @@ const statusTone = ref<ArticleFlowStatusTone>('idle')
 const activeSourcePathKey = ref<string | null>(null)
 const completedSourcePathKeys = ref<Set<string>>(new Set())
 const failedSourcePathKeys = ref<Set<string>>(new Set())
+const selectedSourcePathKeys = ref<Set<string>>(new Set())
 const sourceTreeFrame = ref<HTMLElement | null>(null)
 let removeImportProgressListener: (() => void) | undefined
 
@@ -43,12 +51,34 @@ const sourceFilePaths = computed(
       ...article.relativeSourcePath.split(/[\\/]/).filter(Boolean),
     ]) ?? [],
 )
+const sourceTreeNodes = computed(() => buildSourceTree(importPlan.value?.folderPaths ?? [], sourceFilePaths.value))
+const selectedImportScope = computed<ArticleFlowImportSelection>(() => {
+  const plan = importPlan.value
+
+  if (!plan) {
+    return { articlePaths: [], folderPaths: [] }
+  }
+
+  return createArticleImportSelection(plan, selectedSourcePathKeys.value)
+})
+const selectedArticleCount = computed(() => selectedImportScope.value.articlePaths.length)
+const hasSelectedArticles = computed(() => selectedArticleCount.value > 0)
 const isBusy = computed(() => isPreparingTemplate.value || isRunning.value)
 const canPrepareTemplate = computed(
-  () => importPlan.value !== null && !isSelectingRoot.value && !isBusy.value && !isTemplatePrepared.value,
+  () =>
+    importPlan.value !== null &&
+    hasSelectedArticles.value &&
+    !isSelectingRoot.value &&
+    !isBusy.value &&
+    !isTemplatePrepared.value,
 )
 const canRun = computed(
-  () => importPlan.value !== null && !isSelectingRoot.value && !isBusy.value && isTemplatePrepared.value,
+  () =>
+    importPlan.value !== null &&
+    hasSelectedArticles.value &&
+    !isSelectingRoot.value &&
+    !isBusy.value &&
+    isTemplatePrepared.value,
 )
 const primaryActionButton = computed<PrimaryActionButtonState>(() => {
   if (isStopping.value) {
@@ -81,7 +111,7 @@ const primaryActionButton = computed<PrimaryActionButtonState>(() => {
     return {
       disabled: !canRun.value,
       icon: 'pi pi-play',
-      label: 'Continue import',
+      label: 'Import selected',
     }
   }
 
@@ -150,8 +180,11 @@ async function selectRoot() {
 
     importPlan.value = result.plan
     isTemplatePrepared.value = false
+    selectedSourcePathKeys.value = createFullySelectedSourceTree(
+      buildSourceTree(result.plan.folderPaths, getSourceFilePaths(result.plan)),
+    )
     resetImportProgress()
-    statusMessage.value = formatPlanStatus(result.plan)
+    statusMessage.value = formatSelectionStatus(result.plan, result.plan.articles.length)
     statusTone.value = 'ready'
   } catch {
     setFailureStatus('Could not read the selected source folder.')
@@ -221,14 +254,15 @@ async function runImport() {
   statusTone.value = 'running'
 
   try {
-    const result = await window.articleflow.runImport(plan.rootPath, completionAction.value)
+    const result = await window.articleflow.runImport(plan.rootPath, completionAction.value, selectedImportScope.value)
 
     setResultStatus(result)
-  } catch {
+  } catch (error) {
     if (activeSourcePathKey.value) {
       markSourcePathKeyFailed(activeSourcePathKey.value)
     }
 
+    await reportRendererError('Import failed.', error)
     setFailureStatus('Import failed.')
   } finally {
     activeSourcePathKey.value = null
@@ -306,6 +340,20 @@ function handleImportProgress(progress: ArticleFlowProgressUpdate) {
   }
 }
 
+function handleSourceSelection(pathKey: string, selected: boolean) {
+  selectedSourcePathKeys.value = setSourceTreeNodeSelected(
+    sourceTreeNodes.value,
+    selectedSourcePathKeys.value,
+    pathKey,
+    selected,
+  )
+
+  if (!isBusy.value && importPlan.value) {
+    statusMessage.value = formatSelectionStatus(importPlan.value, selectedArticleCount.value)
+    statusTone.value = hasSelectedArticles.value ? 'ready' : 'idle'
+  }
+}
+
 function markSourcePathCreated(path: string[]) {
   const pathKey = getSourcePathKey(path)
   const nextCompletedPaths = new Set(completedSourcePathKeys.value)
@@ -372,8 +420,22 @@ function setResultStatus(result: ArticleFlowRunResult) {
   statusTone.value = 'success'
 }
 
-function formatPlanStatus(plan: ArticleFlowImportPlan) {
-  return `${formatCount(plan.articles.length, 'article')} across ${formatCount(plan.folderPaths.length, 'folder')}.`
+function formatSelectionStatus(plan: ArticleFlowImportPlan, selectedCount: number) {
+  if (selectedCount === 0) {
+    return 'Select at least one article to import.'
+  }
+
+  if (selectedCount === plan.articles.length) {
+    return `${formatCount(selectedCount, 'article')} selected across ${formatCount(plan.folderPaths.length, 'folder')}.`
+  }
+
+  return `${selectedCount} of ${formatCount(plan.articles.length, 'article')} selected.`
+}
+
+function getSourceFilePaths(plan: ArticleFlowImportPlan) {
+  const rootName = plan.rootPath.split(/[\\/]/).filter(Boolean).at(-1) ?? ''
+
+  return plan.articles.map(article => [rootName, ...article.relativeSourcePath.split(/[\\/]/).filter(Boolean)])
 }
 
 function formatCount(count: number, noun: string) {
@@ -545,6 +607,7 @@ async function reportRendererError(message: string, error: unknown) {
                   <i class="pi pi-chevron-right detail-chevron" aria-hidden="true" />
                   <span>Folder hierarchy</span>
                 </span>
+                <strong class="selection-count">{{ selectedArticleCount }} selected</strong>
               </summary>
               <div ref="sourceTreeFrame" class="source-tree-frame">
                 <SourceStructureTree
@@ -553,6 +616,9 @@ async function reportRendererError(message: string, error: unknown) {
                   :failed-path-keys="failedSourcePathKeys"
                   :file-paths="sourceFilePaths"
                   :folder-paths="importPlan.folderPaths"
+                  :disabled="isBusy"
+                  :selected-path-keys="selectedSourcePathKeys"
+                  @select="handleSourceSelection"
                 />
               </div>
             </details>
@@ -1012,6 +1078,14 @@ async function reportRendererError(message: string, error: unknown) {
   color: var(--kw-text-light);
   font-size: 0.8125rem;
   font-weight: 600;
+}
+
+.source-details .selection-count {
+  color: var(--kw-text-muted);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.125rem;
+  white-space: nowrap;
 }
 
 .ignored-details ul {

@@ -63,6 +63,11 @@ const { contextBridge, ipcRenderer } = require('electron')
  * }} ArticleFlowImportPlan
  *
  * @typedef {{
+ *   articlePaths: string[],
+ *   folderPaths: string[][],
+ * }} ArticleFlowImportSelection
+ *
+ * @typedef {{
  *   canceled: boolean,
  *   ok: boolean,
  *   plan?: ArticleFlowImportPlan,
@@ -186,9 +191,11 @@ contextBridge.exposeInMainWorld('articleflow', {
   /**
    * @param {string} rootPath
    * @param {ArticleFlowCompletionAction} completionAction
+   * @param {ArticleFlowImportSelection} selection
    * @returns {Promise<ArticleFlowRunResult>}
    */
-  runImport: (rootPath, completionAction) => ipcRenderer.invoke('articleflow:run', rootPath, completionAction),
+  runImport: (rootPath, completionAction, selection) =>
+    ipcRenderer.invoke('articleflow:run', rootPath, completionAction, selection),
 
   /**
    * @returns {Promise<ArticleFlowSelectionResult>}
