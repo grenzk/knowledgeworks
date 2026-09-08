@@ -71,7 +71,7 @@ function getNodeSelectionState(node: SourceTreeNode) {
           @change="handleSelectionChange(node, $event)"
         />
         <i
-          class="pi"
+          class="pi structure-tree-node-icon"
           :class="node.kind === 'file' ? 'pi-file' : currentDepth === 0 ? 'pi-folder-open' : 'pi-folder'"
           aria-hidden="true"
         />
@@ -220,7 +220,7 @@ function getNodeSelectionState(node: SourceTreeNode) {
   text-align: center;
 }
 
-.structure-tree.root > .structure-tree-node > .structure-tree-row:not(.completed) > i:first-child {
+.structure-tree.root > .structure-tree-node > .structure-tree-row:not(.completed) > .structure-tree-node-icon {
   color: var(--kw-focus);
 }
 
@@ -238,7 +238,7 @@ function getNodeSelectionState(node: SourceTreeNode) {
   background: var(--kw-surface-hover);
 }
 
-.structure-tree-row.active > i:first-child {
+.structure-tree-row.active > .structure-tree-node-icon {
   color: var(--kw-focus);
 }
 
@@ -246,7 +246,7 @@ function getNodeSelectionState(node: SourceTreeNode) {
   color: var(--kw-text-light);
 }
 
-.structure-tree-row.completed > i:first-child,
+.structure-tree-row.completed > .structure-tree-node-icon,
 .structure-tree-row > .structure-tree-status.pi-check {
   color: var(--kw-success);
 }
@@ -255,7 +255,7 @@ function getNodeSelectionState(node: SourceTreeNode) {
   color: var(--kw-text-light);
 }
 
-.structure-tree-row.failed > i:first-child,
+.structure-tree-row.failed > .structure-tree-node-icon,
 .structure-tree-row > .structure-tree-status.pi-times {
   color: var(--kw-danger);
 }
