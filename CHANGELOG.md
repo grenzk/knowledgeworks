@@ -6,6 +6,7 @@ Changed
 
 - Increased the MASW search-result wait for slower responses.
 - Improved Asset Library diagnostics for failed search and loading interactions.
+- Renamed the GitHub updater repository to `knowledgeworks-releases`.
 - Prepared the KnowledgeWorks 2.0.1 release.
 
 Fixed
