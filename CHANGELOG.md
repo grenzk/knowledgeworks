@@ -13,6 +13,7 @@ Fixed
 - Preserved existing spreadsheet data for DocSweep sites that are disabled during a sweep.
 - Fixed PD Cloud verification when its expired-session dialog appears after verification starts.
 - Reset the DocSweep finishing state after a sweep ends.
+- Fixed MediaBridge Run and Stop icon alignment across Windows and macOS.
 
 2.0.0 - September 6, 2026
 

@@ -61,7 +61,7 @@ async function openLogs() {
       >
         <template v-if="isCountingTargets">
           <i class="pi pi-stop action-state-icon" aria-hidden="true" />
-          <span>Stop</span>
+          <span class="action-state-label">Stop</span>
         </template>
         <template v-else>
           <span class="counter-number">{{ targetCount ?? '--' }}</span>
@@ -86,7 +86,7 @@ async function openLogs() {
             :class="isRunningMediaLinking ? 'pi pi-stop' : 'pi pi-play'"
             aria-hidden="true"
           />
-          <span>{{ isRunningMediaLinking ? 'Stop' : 'Run' }}</span>
+          <span class="action-state-label">{{ isRunningMediaLinking ? 'Stop' : 'Run' }}</span>
         </button>
 
         <button
@@ -403,8 +403,24 @@ async function openLogs() {
 }
 
 .action-state-icon {
-  font-size: 0.72rem;
-  line-height: 1;
+  display: grid;
+  place-items: center;
+  flex: 0 0 12px;
+  width: 12px;
+  height: 12px;
+  font-size: 12px;
+  line-height: 12px;
+}
+
+.action-state-icon::before {
+  line-height: 12px;
+}
+
+.action-state-label {
+  display: inline-flex;
+  align-items: center;
+  height: 14px;
+  line-height: 14px;
 }
 
 .counter-number {
