@@ -140,9 +140,8 @@ Windows installer should preferably be built and smoke-tested on Windows.
 
 ## Releases and Updates
 
-Packaged Windows builds check the `grenzk/mediabridge-releases` GitHub Releases repository for updates. The legacy
-repository name is intentional and preserves the existing updater configuration. Upload these artifacts from a Windows
-build for each release:
+Packaged Windows builds check the `grenzk/knowledgeworks-releases` GitHub Releases repository for updates. Upload these
+artifacts from a Windows build for each release:
 
 - `KnowledgeWorks Setup <version>.exe`
 - `KnowledgeWorks Setup <version>.exe.blockmap`
