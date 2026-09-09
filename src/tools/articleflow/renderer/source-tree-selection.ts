@@ -80,15 +80,15 @@ export function getSourceTreeSelectionState(
   node: SourceTreeNode,
   selectedPathKeys: ReadonlySet<string>,
 ): SourceTreeSelectionState {
-  if (selectedPathKeys.has(getSourceTreeNodeKey(node))) {
+  if (isSourceTreeNodeFullySelected(node, selectedPathKeys)) {
     return 'checked'
   }
 
-  const hasSelectedDescendant = flattenSourceTree(node.children).some(descendant =>
-    selectedPathKeys.has(getSourceTreeNodeKey(descendant)),
+  const hasSelectedNode = flattenSourceTree([node]).some(candidate =>
+    selectedPathKeys.has(getSourceTreeNodeKey(candidate)),
   )
 
-  return hasSelectedDescendant ? 'mixed' : 'unchecked'
+  return hasSelectedNode ? 'mixed' : 'unchecked'
 }
 
 export function getSourceTreeNodeKey(node: Pick<SourceTreeNode, 'kind' | 'path'>): string {
@@ -118,22 +118,37 @@ function flattenSourceTree(nodes: SourceTreeNode[]): SourceTreeNode[] {
   return nodes.flatMap(node => [node, ...flattenSourceTree(node.children)])
 }
 
+function isSourceTreeNodeFullySelected(node: SourceTreeNode, selectedPathKeys: ReadonlySet<string>): boolean {
+  return (
+    selectedPathKeys.has(getSourceTreeNodeKey(node)) &&
+    node.children.every(child => isSourceTreeNodeFullySelected(child, selectedPathKeys))
+  )
+}
+
 function normalizeFolderSelection(nodes: SourceTreeNode[], selectedPathKeys: Set<string>): boolean {
-  return nodes.every(node => {
+  let allNodesSelected = true
+
+  for (const node of nodes) {
     const pathKey = getSourceTreeNodeKey(node)
 
     if (node.kind === 'file' || node.children.length === 0) {
-      return selectedPathKeys.has(pathKey)
+      if (!selectedPathKeys.has(pathKey)) {
+        allNodesSelected = false
+      }
+
+      continue
     }
 
     const allChildrenSelected = normalizeFolderSelection(node.children, selectedPathKeys)
 
     if (allChildrenSelected) {
       selectedPathKeys.add(pathKey)
-    } else {
-      selectedPathKeys.delete(pathKey)
     }
 
-    return allChildrenSelected
-  })
+    if (!selectedPathKeys.has(pathKey) || !allChildrenSelected) {
+      allNodesSelected = false
+    }
+  }
+
+  return allNodesSelected
 }
