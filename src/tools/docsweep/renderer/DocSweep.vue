@@ -5,20 +5,20 @@ import ToggleSwitch from 'primevue/toggleswitch'
 import Dialog from 'primevue/dialog'
 import { useDocSweepTimer } from '../composables/useDocSweepTimer'
 import { useDocSweepSites } from '../composables/useDocSweepSites'
-import type {
-  DocSweepSite,
-  ExcelDocument,
-  FooterStatus,
-  SaveResultsChoice,
-  SiteSummary,
-} from '../types'
+import type { DocSweepSite, ExcelDocument, FooterStatus, SaveResultsChoice, SiteSummary } from '../types'
+
+const {
+  sites,
+  isVerifying,
+  isSitesVerified,
+  verifySites: verifySitesInternal,
+  invalidateSiteVerification: invalidateSiteVerificationInternal,
+} = useDocSweepSites()
 
 const excelFile = ref('')
 const documents = ref<ExcelDocument[]>([])
 
-const isVerifying = ref(false)
 const isRunning = ref(false)
-const isSitesVerified = ref(false)
 const isSweepInitialized = ref(false)
 const isCancelRequested = ref(false)
 const showCancelDialog = ref(false)
@@ -36,8 +36,6 @@ const saveResultsChoice = ref<SaveResultsChoice | null>(null)
 let saveResultsResolver: ((choice: SaveResultsChoice) => void) | null = null
 let saveErrorResolver: ((saved: boolean) => void) | null = null
 const footerStatus = ref<FooterStatus>('warning')
-
-const { sites } = useDocSweepSites()
 
 const summary = ref<SiteSummary[]>([
   {
@@ -187,81 +185,25 @@ async function openSite(url: string, matchUrl: string): Promise<void> {
 }
 
 async function verifySites(): Promise<void> {
-  if (isVerifying.value) {
-    return
-  }
-
-  isSitesVerified.value = false
-
-  const includedSites = sites.value.filter(site => site.enabled).map(site => site.name)
-
-  if (includedSites.length === 0) {
-    sweepStatus.value = 'Select at least one site to verify.'
-    return
-  }
-
-  isVerifying.value = true
   sweepStatus.value = 'Checking sites...'
 
-  for (const site of sites.value) {
-    if (site.enabled) {
-      site.status = 'Verifying'
-    } else {
-      site.status = 'Not connected'
-    }
+  const result = await verifySitesInternal()
+
+  if (!result.ok) {
+    footerStatus.value = 'error'
+    sweepStatus.value =
+      result.error ?? 'One or more enabled sites are not ready.'
+    return
   }
 
-  try {
-    const result = await window.docsweep.verifySites(includedSites)
-
-    if (!result.ok) {
-      footerStatus.value = 'error'
-      sweepStatus.value = result.error ?? 'Site verification failed.'
-
-      for (const site of sites.value) {
-        if (site.enabled) {
-          site.status = 'Error'
-        }
-      }
-
-      return
-    }
-
-    for (const verification of result.results) {
-      const site = sites.value.find(item => item.name === verification.name)
-
-      if (!site) {
-        continue
-      }
-
-      site.status = verification.status
-    }
-
-    const allEnabledSitesReady =
-      result.results.length === includedSites.length && result.results.every(site => site.status === 'Ready')
-
-    isSitesVerified.value = allEnabledSitesReady
-
-    footerStatus.value = allEnabledSitesReady && canStartSweep.value ? 'ready' : 'warning'
-
-    sweepStatus.value = allEnabledSitesReady
-      ? 'All enabled sites are ready.'
-      : 'One or more enabled sites are not ready.'
-  } finally {
-    isVerifying.value = false
-  }
+  footerStatus.value = 'ready'
+  sweepStatus.value = 'All enabled sites are ready.'
 }
 
 function invalidateSiteVerification(): void {
-  isSitesVerified.value = false
+  invalidateSiteVerificationInternal()
+
   isSweepInitialized.value = false
-
-  for (const site of sites.value) {
-    if (!site.enabled) {
-      site.status = 'Not connected'
-    }
-  }
-
   footerStatus.value = 'warning'
   sweepStatus.value = 'Site configuration changed. Verify sites again.'
 }

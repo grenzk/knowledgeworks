@@ -34,7 +34,92 @@ export function useDocSweepSites() {
     },
   ])
 
+  const isVerifying = ref(false)
+  const isSitesVerified = ref(false)
+
+  async function verifySites(): Promise<{
+    ok: boolean
+    error?: string
+  }> {
+    if (isVerifying.value) {
+      return { ok: false }
+    }
+
+    isSitesVerified.value = false
+
+    const includedSites = sites.value.filter(site => site.enabled).map(site => site.name)
+
+    if (includedSites.length === 0) {
+      return {
+        ok: false,
+        error: 'Select at least one site to verify.',
+      }
+    }
+
+    isVerifying.value = true
+
+    for (const site of sites.value) {
+      if (site.enabled) {
+        site.status = 'Verifying'
+      } else {
+        site.status = 'Not connected'
+      }
+    }
+
+    try {
+      const result = await window.docsweep.verifySites(includedSites)
+
+      if (!result.ok) {
+        for (const site of sites.value) {
+          if (site.enabled) {
+            site.status = 'Error'
+          }
+        }
+
+        return {
+          ok: false,
+          error: result.error ?? 'Site verification failed.',
+        }
+      }
+
+      for (const verification of result.results) {
+        const site = sites.value.find(item => item.name === verification.name)
+
+        if (!site) {
+          continue
+        }
+
+        site.status = verification.status
+      }
+
+      const allEnabledSitesReady =
+        result.results.length === includedSites.length && result.results.every(site => site.status === 'Ready')
+
+      isSitesVerified.value = allEnabledSitesReady
+
+      return {
+        ok: allEnabledSitesReady,
+      }
+    } finally {
+      isVerifying.value = false
+    }
+  }
+
+  function invalidateSiteVerification(): void {
+    isSitesVerified.value = false
+
+    for (const site of sites.value) {
+      if (!site.enabled) {
+        site.status = 'Not connected'
+      }
+    }
+  }
+
   return {
     sites,
+    isVerifying,
+    isSitesVerified,
+    verifySites,
+    invalidateSiteVerification,
   }
 }
