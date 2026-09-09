@@ -4,6 +4,7 @@ import InputText from 'primevue/inputtext'
 import ToggleSwitch from 'primevue/toggleswitch'
 import Dialog from 'primevue/dialog'
 import { useDocSweepTimer } from '../composables/useDocSweepTimer'
+import { useDocSweepSites } from '../composables/useDocSweepSites'
 import type {
   DocSweepSite,
   ExcelDocument,
@@ -36,37 +37,7 @@ let saveResultsResolver: ((choice: SaveResultsChoice) => void) | null = null
 let saveErrorResolver: ((saved: boolean) => void) | null = null
 const footerStatus = ref<FooterStatus>('warning')
 
-const sites = ref<DocSweepSite[]>([
-  {
-    name: 'Vertiv',
-    status: 'Not connected',
-    url: 'https://www.vertiv.com/en-us/',
-    matchUrl: 'https://www.vertiv.com/en-us/',
-    enabled: true,
-  },
-  {
-    name: 'Asset Library',
-    status: 'Not connected',
-    url: 'https://asset-library.vertiv.com/#/home?tabName=HOME',
-    matchUrl: 'https://asset-library.vertiv.com/',
-    enabled: true,
-  },
-  {
-    name: 'PD Cloud',
-    status: 'Not connected',
-    url: 'https://egup.fa.us2.oraclecloud.com/fscmUI/faces/FndOverview?pageParams=fndGlobalItemNodeId%3DitemNode_product_management_product_development&fndGlobalItemNodeId=itemNode_product_management_product_development&_adf.ctrl-state=CTzs-5yoqQZV_1&_adf.no-new-window-redirect=true&_afrLoop=2780622838863036&_afrWindowMode=2&_afrWindowId=null&_afrFS=16&_afrMT=screen&_afrMFW=944&_afrMFH=882&_afrMFDW=1920&_afrMFDH=1080&_afrMFC=8&_afrMFCI=0&_afrMFM=0&_afrMFR=96&_afrMFG=0&_afrMFS=0&_afrMFO=0',
-    matchUrl:
-      'https://egup.fa.us2.oraclecloud.com/fscmUI/faces/FndOverview?pageParams=fndGlobalItemNodeId%3DitemNode_product_management_product_development&fndGlobalItemNodeId=itemNode_product_management_product_development',
-    enabled: true,
-  },
-  {
-    name: 'MASW',
-    status: 'Not connected',
-    url: 'https://amerplmpwiap01.int.vertivco.com/File_Display_MBD/faces/UserManualDisplay.xhtml',
-    matchUrl: 'https://amerplmpwiap01.int.vertivco.com/File_Display_MBD/faces/UserManualDisplay.xhtml',
-    enabled: true,
-  },
-])
+const { sites } = useDocSweepSites()
 
 const summary = ref<SiteSummary[]>([
   {

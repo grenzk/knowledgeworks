@@ -63,6 +63,7 @@ export function useDocSweepTimer(updateSiteElapsed: SiteSummaryUpdater) {
 
     const elapsedMs = Date.now() - siteStartTime
 
+    siteStartTimes.delete(siteName)
     updateSiteElapsed(siteName, elapsedMs)
 
     return elapsedMs
