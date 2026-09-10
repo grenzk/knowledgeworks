@@ -10,7 +10,7 @@ export function useDocSweepResults(documents: Ref<ExcelDocument[]>, enabledSiteC
 
   const summary = ref<SiteSummary[]>([
     {
-      site: 'Vertiv',
+      site: 'PD Cloud',
       found: 0,
       notFound: 0,
       errors: 0,
@@ -26,7 +26,7 @@ export function useDocSweepResults(documents: Ref<ExcelDocument[]>, enabledSiteC
       elapsedMs: 0,
     },
     {
-      site: 'PD Cloud',
+      site: 'MASW',
       found: 0,
       notFound: 0,
       errors: 0,
@@ -34,7 +34,7 @@ export function useDocSweepResults(documents: Ref<ExcelDocument[]>, enabledSiteC
       elapsedMs: 0,
     },
     {
-      site: 'MASW',
+      site: 'Vertiv',
       found: 0,
       notFound: 0,
       errors: 0,
