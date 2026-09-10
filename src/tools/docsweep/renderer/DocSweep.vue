@@ -9,8 +9,9 @@ import { useDocSweepSweep } from '../composables/useDocSweepSweep'
 import { useDocSweepSave } from '../composables/useDocSweepSave'
 import { useDocSweepExcel } from '../composables/useDocSweepExcel'
 import { useDocSweepCancellation } from '../composables/useDocSweepCancellation'
+import { useDocSweepResults } from '../composables/useDocSweepResults'
 
-import type { ExcelDocument, FooterStatus, SaveResultsChoice, SiteSummary } from '../types'
+import type { ExcelDocument, FooterStatus, SaveResultsChoice } from '../types'
 
 const {
   sites,
@@ -32,49 +33,9 @@ const showSaveErrorDialog = ref(false)
 const isSearchFinishing = ref(false)
 
 const sweepStatus = ref('Select an Excel file.')
-const currentSite = ref('-')
-const currentControlNumber = ref('-')
-const completedCount = ref(0)
-const totalCount = ref(0)
-const sweepDocuments = ref<ExcelDocument[]>([])
 const saveResultsChoice = ref<SaveResultsChoice | null>(null)
 const saveErrorResolver = ref<((saved: boolean) => void) | null>(null)
 const footerStatus = ref<FooterStatus>('warning')
-
-const summary = ref<SiteSummary[]>([
-  {
-    site: 'Vertiv',
-    found: 0,
-    notFound: 0,
-    errors: 0,
-    total: 0,
-    elapsedMs: 0,
-  },
-  {
-    site: 'Asset Library',
-    found: 0,
-    notFound: 0,
-    errors: 0,
-    total: 0,
-    elapsedMs: 0,
-  },
-  {
-    site: 'PD Cloud',
-    found: 0,
-    notFound: 0,
-    errors: 0,
-    total: 0,
-    elapsedMs: 0,
-  },
-  {
-    site: 'MASW',
-    found: 0,
-    notFound: 0,
-    errors: 0,
-    total: 0,
-    elapsedMs: 0,
-  },
-])
 
 const {
   totalElapsedMs,
@@ -95,6 +56,25 @@ const {
       : item,
   )
 })
+
+const {
+  currentSite,
+  currentControlNumber,
+  completedCount,
+  totalCount,
+  sweepDocuments,
+  summary,
+  progress,
+  totalFound,
+  totalNotFound,
+  totalErrors,
+  totalResults,
+  successRate,
+  initializeSweep,
+} = useDocSweepResults(
+  documents,
+  computed(() => enabledSites.value.length),
+)
 
 const enabledSites = computed(() => sites.value.filter(site => site.enabled))
 
@@ -169,30 +149,6 @@ const { runSweep } = useDocSweepSweep({
     footerStatus.value = 'ready'
     isRunning.value = false
   },
-})
-
-const progress = computed(() => {
-  if (totalCount.value === 0) {
-    return 0
-  }
-
-  return Math.round((completedCount.value / totalCount.value) * 100)
-})
-
-const totalFound = computed(() => summary.value.reduce((total, item) => total + item.found, 0))
-
-const totalNotFound = computed(() => summary.value.reduce((total, item) => total + item.notFound, 0))
-
-const totalErrors = computed(() => summary.value.reduce((total, item) => total + item.errors, 0))
-
-const totalResults = computed(() => summary.value.reduce((total, item) => total + item.total, 0))
-
-const successRate = computed(() => {
-  if (totalResults.value === 0) {
-    return 0
-  }
-
-  return Math.round((totalFound.value / totalResults.value) * 1000) / 10
 })
 
 const canStartSweep = computed(() => {
@@ -300,20 +256,7 @@ async function startSweep(): Promise<void> {
   isCancelRequested.value = false
   saveResultsChoice.value = null
 
-  completedCount.value = 0
-  currentSite.value = '-'
-  currentControlNumber.value = '-'
-
-  sweepDocuments.value = documents.value.map(document => ({
-    row: document.row,
-    controlNumber: document.controlNumber,
-    masw: document.masw,
-    vertiv: document.vertiv,
-    assetLibrary: document.assetLibrary,
-    pdCloud: document.pdCloud,
-  }))
-
-  totalCount.value = sweepDocuments.value.length * enabledSites.value.length
+  initializeSweep()
 
   try {
     if (sweepDocuments.value.length === 0) {
