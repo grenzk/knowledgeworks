@@ -1,6 +1,6 @@
 {
   "name": "knowledgeworks",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "description": "Desktop automation hub for MediaBridge, ArticleFlow, and future eGain workflows.",
   "author": "grenzk",
   "private": true,
