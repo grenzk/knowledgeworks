@@ -8,6 +8,8 @@ import { useDocSweepSites } from '../composables/useDocSweepSites'
 import { useDocSweepSweep } from '../composables/useDocSweepSweep'
 import { useDocSweepSave } from '../composables/useDocSweepSave'
 import { useDocSweepExcel } from '../composables/useDocSweepExcel'
+import { useDocSweepCancellation } from '../composables/useDocSweepCancellation'
+
 import type { ExcelDocument, FooterStatus, SaveResultsChoice, SiteSummary } from '../types'
 
 const {
@@ -36,7 +38,6 @@ const completedCount = ref(0)
 const totalCount = ref(0)
 const sweepDocuments = ref<ExcelDocument[]>([])
 const saveResultsChoice = ref<SaveResultsChoice | null>(null)
-let saveResultsResolver: ((choice: SaveResultsChoice) => void) | null = null
 const saveErrorResolver = ref<((saved: boolean) => void) | null>(null)
 const footerStatus = ref<FooterStatus>('warning')
 
@@ -114,6 +115,23 @@ const { selectExcelFile } = useDocSweepExcel({
   footerStatus,
   sweepStatus,
   isRunning,
+})
+
+const {
+  requestCancelSweep,
+  confirmCancelSweep,
+  saveCancelledResults,
+  discardSweepResults,
+  continueSweep,
+  waitForSaveResultsChoice,
+} = useDocSweepCancellation({
+  isRunning,
+  isCancelRequested,
+  isSearchFinishing,
+  showCancelDialog,
+  showSaveResultsDialog,
+  saveResultsChoice,
+  sweepStatus,
 })
 
 const { runSweep } = useDocSweepSweep({
@@ -266,58 +284,6 @@ function invalidateSiteVerification(): void {
   isSweepInitialized.value = false
   footerStatus.value = 'warning'
   sweepStatus.value = 'Site configuration changed. Verify sites again.'
-}
-
-function requestCancelSweep(): void {
-  if (!isRunning.value || showSaveResultsDialog.value || isSearchFinishing.value) {
-    return
-  }
-
-  showCancelDialog.value = true
-}
-
-function confirmCancelSweep(): void {
-  showCancelDialog.value = false
-
-  isCancelRequested.value = true
-  isSearchFinishing.value = true
-
-  sweepStatus.value = 'Cancellation requested. Finishing the current search...'
-}
-
-function saveCancelledResults(): void {
-  saveResultsChoice.value = 'save'
-  showSaveResultsDialog.value = false
-
-  saveResultsResolver?.('save')
-  saveResultsResolver = null
-}
-
-function discardSweepResults(): void {
-  saveResultsChoice.value = 'discard'
-  showSaveResultsDialog.value = false
-
-  saveResultsResolver?.('discard')
-  saveResultsResolver = null
-}
-
-function continueSweep(): void {
-  saveResultsChoice.value = 'continue'
-  isCancelRequested.value = false
-  isSearchFinishing.value = false
-  showSaveResultsDialog.value = false
-
-  saveResultsResolver?.('continue')
-  saveResultsResolver = null
-}
-
-function waitForSaveResultsChoice(): Promise<SaveResultsChoice> {
-  saveResultsChoice.value = null
-  showSaveResultsDialog.value = true
-
-  return new Promise(resolve => {
-    saveResultsResolver = resolve
-  })
 }
 
 async function startSweep(): Promise<void> {
