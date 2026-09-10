@@ -84,6 +84,20 @@ export type ArticleFlowRunResult = {
   ok: boolean
 }
 
+export type ArticleFlowPublishResult = {
+  alreadyPublishedArticleCount: number
+  canceled: boolean
+  issues: Array<{
+    kind: 'failed' | 'missing' | 'unavailable'
+    message: string
+    relativeSourcePath: string
+  }>
+  missingArticleCount: number
+  ok: boolean
+  publishedArticleCount: number
+  unavailableArticleCount: number
+}
+
 export type ArticleFlowProgressUpdate = {
   kind: 'article' | 'folder'
   path: string[]
@@ -111,9 +125,10 @@ export type DocSweepActionResult = {
 }
 
 export type ArticleFlowApi = {
-  cancelImport: () => Promise<AutomationCancelResult>
+  cancelOperation: () => Promise<AutomationCancelResult>
   onImportProgress: (callback: (progress: ArticleFlowProgressUpdate) => void) => () => void
   prepareTemplate: (rootPath: string) => Promise<ArticleFlowTemplatePreparationResult>
+  publishExisting: (rootPath: string, selection: ArticleFlowImportSelection) => Promise<ArticleFlowPublishResult>
   runImport: (
     rootPath: string,
     completionAction: ArticleFlowCompletionAction,

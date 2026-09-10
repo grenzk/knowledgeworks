@@ -2,12 +2,16 @@ import type { Locator, Page } from 'playwright'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const locatorMocks = vi.hoisted(() => ({
+  getArticleListEntryLocators: vi.fn(),
   getArticleListLocators: vi.fn(),
 }))
 
 vi.mock('../../../src/shared/egain/editor/get-article-editor-locators.ts', () => locatorMocks)
 
-import { collectExistingArticleTitles } from '../../../src/tools/articleflow/automation/collect-existing-article-titles.ts'
+import {
+  collectExistingArticleTitles,
+  openExistingArticleFromList,
+} from '../../../src/tools/articleflow/automation/collect-existing-article-titles.ts'
 
 type ArticlePageState = {
   currentPage: number
@@ -16,6 +20,7 @@ type ArticlePageState = {
 }
 
 beforeEach(() => {
+  locatorMocks.getArticleListEntryLocators.mockReset()
   locatorMocks.getArticleListLocators.mockReset()
 })
 
@@ -119,6 +124,58 @@ describe('collectExistingArticleTitles', () => {
 
     await expect(collectExistingArticleTitles(createPage())).resolves.toEqual(new Set(['Startup Procedures']))
     expect(inputReadCount).toBeGreaterThan(1)
+  })
+
+  it('opens an exact-title article from a later article-list page', async () => {
+    const state: ArticlePageState = {
+      currentPage: 1,
+      idsByPage: {
+        1: ['ECV3-100'],
+        2: ['ECV3-200'],
+      },
+      titlesByPage: {
+        1: ['Overview'],
+        2: ['Manuals'],
+      },
+    }
+    const articleClick = vi.fn()
+    const nextPageClick = vi.fn(async () => {
+      state.currentPage += 1
+    })
+    const waitForURL = vi.fn()
+
+    locatorMocks.getArticleListLocators.mockReturnValue({
+      articleIds: createTextListLocator(() => state.idsByPage[state.currentPage]),
+      currentPageInput: createSingleLocator({ inputValue: () => String(state.currentPage) }),
+      emptyState: createSingleLocator({ isVisible: () => false }),
+      firstPageButton: createSingleLocator(),
+      nextPageButton: createSingleLocator({ click: nextPageClick }),
+      titleLabels: createTextListLocator(() => state.titlesByPage[state.currentPage]),
+      totalPagesLabel: createSingleLocator({ textContent: () => ' of 2' }),
+    })
+    locatorMocks.getArticleListEntryLocators.mockImplementation((_page, title) => ({
+      cell: {
+        click: articleClick,
+        count: async () => (state.titlesByPage[state.currentPage].includes(title) ? 1 : 0),
+        isVisible: async () => true,
+        locator: () => ({
+          getAttribute: async () => '202300000000200',
+          locator: () => ({
+            first: () => ({ getAttribute: async () => 'Draft' }),
+          }),
+        }),
+      },
+    }))
+
+    const articlePage = {
+      ...createPage(),
+      waitForURL,
+    } as unknown as Page
+
+    await expect(openExistingArticleFromList(articlePage, 'Manuals')).resolves.toBe('checked-in')
+    expect(nextPageClick).toHaveBeenCalledOnce()
+    expect(articleClick).toHaveBeenCalledOnce()
+    expect(waitForURL).toHaveBeenCalledWith(/\/article\/202300000000200\/?$/, expect.any(Object))
   })
 })
 

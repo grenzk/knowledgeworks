@@ -1,11 +1,16 @@
 import type { Locator, Page } from 'playwright'
 import { throwIfAutomationCancelled } from '../../../shared/automation/cancellation.ts'
-import { getArticleListLocators } from '../../../shared/egain/editor/get-article-editor-locators.ts'
+import {
+  getArticleListEntryLocators,
+  getArticleListLocators,
+} from '../../../shared/egain/editor/get-article-editor-locators.ts'
 
 const articleListTimeoutMs = 60000
 const articleListPollIntervalMs = 100
 const articleListStablePollCount = 20
 const articleListSnapshotTimeoutMs = 1000
+
+export type ArticleListEntryState = 'checked-in' | 'checked-out' | 'published' | 'unknown'
 
 /**
  * Collects exact article titles across every article-list page for the selected
@@ -79,6 +84,111 @@ export async function collectExistingArticleTitles(articlePage: Page, signal?: A
   }
 
   return titles
+}
+
+/**
+ * Opens an exact-title article from any page of the selected folder's article
+ * list and returns the state shown by its list icon. Returns null when no
+ * matching article exists.
+ */
+export async function openExistingArticleFromList(
+  articlePage: Page,
+  articleTitle: string,
+  signal?: AbortSignal,
+): Promise<ArticleListEntryState | null> {
+  const { articleIds, currentPageInput, emptyState, firstPageButton, nextPageButton, titleLabels, totalPagesLabel } =
+    getArticleListLocators(articlePage)
+
+  if (
+    (await waitForArticleListState(
+      articlePage,
+      articleIds,
+      currentPageInput,
+      emptyState,
+      titleLabels,
+      totalPagesLabel,
+      signal,
+    )) === 'empty'
+  ) {
+    return null
+  }
+
+  await requireUniqueLocator(currentPageInput, 'current article-list page input')
+  await requireUniqueLocator(totalPagesLabel, 'article-list total pages label')
+
+  const totalPages = await getTotalPageCount(totalPagesLabel)
+  let currentPage = await getCurrentPageNumber(currentPageInput)
+
+  if (currentPage < 1 || currentPage > totalPages) {
+    throw new Error(`The eGain article list reported page ${currentPage} of ${totalPages}.`)
+  }
+
+  if (currentPage !== 1) {
+    await requireUniqueLocator(firstPageButton, 'article-list first-page button')
+    await changeArticleListPage(articlePage, currentPageInput, articleIds, titleLabels, firstPageButton, 1, signal)
+    currentPage = 1
+  }
+
+  while (currentPage <= totalPages) {
+    throwIfAutomationCancelled(signal)
+    const { cell } = getArticleListEntryLocators(articlePage, articleTitle)
+    const matchCount = await cell.count()
+
+    if (matchCount > 1) {
+      throw new Error(`Expected one ${articleTitle} article-list entry, but found ${matchCount}.`)
+    }
+
+    if (matchCount === 1 && (await cell.isVisible())) {
+      const articleRow = cell.locator('xpath=ancestor::tr[@data-testid="grid-body-row-articles"][1]')
+      const articleId = await articleRow.getAttribute('data-id')
+      const entryState = await getArticleListEntryState(articleRow)
+
+      if (!articleId || !/^[A-Za-z0-9_-]+$/.test(articleId)) {
+        throw new Error(`Could not determine the eGain article ID for "${articleTitle}".`)
+      }
+
+      await cell.click()
+      await articlePage.waitForURL(new RegExp(`/article/${articleId}/?$`), { timeout: articleListTimeoutMs })
+      return entryState
+    }
+
+    if (currentPage === totalPages) {
+      return null
+    }
+
+    await requireUniqueLocator(nextPageButton, 'article-list next-page button')
+    await changeArticleListPage(
+      articlePage,
+      currentPageInput,
+      articleIds,
+      titleLabels,
+      nextPageButton,
+      currentPage + 1,
+      signal,
+    )
+    currentPage += 1
+  }
+
+  return null
+}
+
+async function getArticleListEntryState(articleRow: Locator): Promise<ArticleListEntryState> {
+  const stateTitle =
+    (await articleRow.locator('.list-state-cell [title]').first().getAttribute('title'))?.trim().toLowerCase() ?? ''
+
+  if (stateTitle === 'draft') {
+    return 'checked-in'
+  }
+
+  if (stateTitle === 'published') {
+    return 'published'
+  }
+
+  if (stateTitle.startsWith('checked out by')) {
+    return 'checked-out'
+  }
+
+  return 'unknown'
 }
 
 async function waitForArticleListState(

@@ -5,9 +5,13 @@ KnowledgeWorks Changelog
 Added
 
 - Added independent folder and article selection to the ArticleFlow source structure.
+- Added an ArticleFlow workflow for publishing selected articles that are already checked in.
+- Added publishing confirmation, cancellation, source-tree progress, and reporting for missing or unavailable articles.
 
 Changed
 
+- Updated ArticleFlow to find exact article titles across paginated eGain folders and identify checked-in articles from their list icon and Edit control.
+- Renamed ArticleFlow renderer composables to describe their import responsibilities without repeating the tool name.
 - Refactored ArticleFlow renderer workflows and DocSweep operations into focused modules.
 - Updated DocSweep site processing order and summary reporting.
 

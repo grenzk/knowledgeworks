@@ -84,12 +84,12 @@ function getNodeSelectionState(node: SourceTreeNode) {
         <i
           v-else-if="getNodeProgressState(node) === 'completed'"
           class="pi pi-check structure-tree-status"
-          aria-label="Created"
+          aria-label="Completed"
         />
         <i
           v-else-if="getNodeProgressState(node) === 'failed'"
           class="pi pi-times structure-tree-status"
-          aria-label="Not created"
+          aria-label="Failed"
         />
       </label>
 

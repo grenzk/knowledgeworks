@@ -12,7 +12,7 @@ type RootSelectionResult = { canceled: true; plan: null } | { canceled: false; p
 /**
  * Owns the selected filesystem root, import plan, and source-tree selection.
  */
-export function useArticleFlowPlan() {
+export function useImportPlan() {
   const importPlan = ref<ArticleFlowImportPlan | null>(null)
   const isSelectingRoot = ref(false)
   const selectedSourcePathKeys = ref<Set<string>>(new Set())
