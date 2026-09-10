@@ -137,6 +137,7 @@ export function useDocSweepSweep(options: UseDocSweepSweepOptions) {
           setDocumentResult(document, site.name, resultValue)
 
           updateSummary(site.name, result)
+          options.sweepStatus.value = `Completed ${site.name} search for ${document.controlNumber}.`
         } catch (error) {
           console.error(`DocSweep ${site.name} search failed for ${document.controlNumber}:`, error)
 
@@ -146,6 +147,7 @@ export function useDocSweepSweep(options: UseDocSweepSweepOptions) {
             ok: false,
             status: 'Error',
           })
+          options.sweepStatus.value = `${site.name} search failed for ${document.controlNumber}.`
         } finally {
           options.completedCount.value += 1
         }
