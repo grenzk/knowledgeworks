@@ -10,6 +10,7 @@ import { useDocSweepSave } from '../composables/useDocSweepSave'
 import { useDocSweepExcel } from '../composables/useDocSweepExcel'
 import { useDocSweepCancellation } from '../composables/useDocSweepCancellation'
 import { useDocSweepResults } from '../composables/useDocSweepResults'
+import { useDocSweepReadiness } from '../composables/useDocSweepReadiness'
 
 import type { ExcelDocument, FooterStatus, SaveResultsChoice } from '../types'
 
@@ -58,6 +59,21 @@ const {
 })
 
 const {
+  enabledSites,
+  canStartSweep,
+  footerStatusMessage,
+} = useDocSweepReadiness({
+  excelFile,
+  documentsLength: computed(() => documents.value.length),
+  sites,
+  isSitesVerified,
+  isRunning,
+  isSweepInitialized,
+  footerStatus,
+  sweepStatus,
+})
+
+const {
   currentSite,
   currentControlNumber,
   completedCount,
@@ -75,8 +91,6 @@ const {
   documents,
   computed(() => enabledSites.value.length),
 )
-
-const enabledSites = computed(() => sites.value.filter(site => site.enabled))
 
 const { saveResultsAsRecovery, saveResultsWithRecovery, retrySaveResults } = useDocSweepSave({
   excelFile,
@@ -149,66 +163,6 @@ const { runSweep } = useDocSweepSweep({
     footerStatus.value = 'ready'
     isRunning.value = false
   },
-})
-
-const canStartSweep = computed(() => {
-  if (!excelFile.value.trim()) {
-    return false
-  }
-
-  if (documents.value.length === 0) {
-    return false
-  }
-
-  const enabledSites = sites.value.filter(site => site.enabled)
-
-  if (enabledSites.length === 0) {
-    return false
-  }
-
-  return isSitesVerified.value && enabledSites.every(site => site.status === 'Ready')
-})
-
-const footerStatusMessage = computed(() => {
-  if (footerStatus.value === 'error') {
-    return sweepStatus.value
-  }
-
-  if (isRunning.value) {
-    return sweepStatus.value
-  }
-
-  if (isSweepInitialized.value) {
-    return sweepStatus.value
-  }
-
-  if (canStartSweep.value) {
-    return 'Ready to start sweep.'
-  }
-
-  if (!excelFile.value.trim()) {
-    return 'Select an Excel file.'
-  }
-
-  if (documents.value.length === 0) {
-    return 'Load a valid Excel file.'
-  }
-
-  const enabledSites = sites.value.filter(site => site.enabled)
-
-  if (enabledSites.length === 0) {
-    return 'Select at least one site.'
-  }
-
-  if (!isSitesVerified.value) {
-    return 'Verify enabled sites before starting.'
-  }
-
-  if (!enabledSites.every(site => site.status === 'Ready')) {
-    return 'One or more enabled sites are not ready.'
-  }
-
-  return sweepStatus.value
 })
 
 async function showLogs(): Promise<void> {
