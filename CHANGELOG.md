@@ -1,5 +1,21 @@
 KnowledgeWorks Changelog
 
+2.1.0 - September 11, 2026
+
+Added
+
+- Added independent folder and article selection to the ArticleFlow source structure.
+
+Changed
+
+- Refactored ArticleFlow renderer workflows and DocSweep operations into focused modules.
+- Updated DocSweep site processing order and summary reporting.
+
+Fixed
+
+- Preserved DocSweep per-document status after a sweep completes.
+- Increased the DocSweep wait for intermittent search responses.
+
 2.0.1 - September 8, 2026
 
 Changed
