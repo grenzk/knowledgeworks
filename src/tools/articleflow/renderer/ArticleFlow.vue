@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
 import SourceStructureTree from './SourceStructureTree.vue'
-import { useArticleFlowWorkflow } from './composables/useArticleFlowWorkflow.ts'
+import { useImportWorkflow } from './composables/useImportWorkflow.ts'
 
 const {
   activeSourcePathKey,
@@ -26,7 +26,7 @@ const {
   statusIcon,
   statusMessage,
   statusTone,
-} = useArticleFlowWorkflow()
+} = useImportWorkflow()
 const sourceTreeFrame = ref<HTMLElement | null>(null)
 
 watch(activeSourcePathKey, async pathKey => {

@@ -4,7 +4,7 @@ import type { ArticleFlowProgressUpdate } from '../../../../shared/types/knowled
 /**
  * Tracks ArticleFlow's active, completed, and failed source paths.
  */
-export function useArticleFlowProgress() {
+export function useImportProgress() {
   const activeSourcePathKey = ref<string | null>(null)
   const completedSourcePathKeys = ref<Set<string>>(new Set())
   const failedSourcePathKeys = ref<Set<string>>(new Set())

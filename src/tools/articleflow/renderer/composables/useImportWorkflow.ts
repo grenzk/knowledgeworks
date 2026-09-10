@@ -5,8 +5,8 @@ import type {
   ArticleFlowPublishResult,
   ArticleFlowRunResult,
 } from '../../../../shared/types/knowledgeworks'
-import { useArticleFlowPlan } from './useArticleFlowPlan.ts'
-import { useArticleFlowProgress } from './useArticleFlowProgress.ts'
+import { useImportPlan } from './useImportPlan.ts'
+import { useImportProgress } from './useImportProgress.ts'
 
 export type ArticleFlowStatusTone = 'idle' | 'ready' | 'running' | 'success' | 'error'
 
@@ -20,9 +20,9 @@ type ActionButtonState = {
 /**
  * Coordinates ArticleFlow's plan, template, import, cancellation, and status workflows.
  */
-export function useArticleFlowWorkflow() {
-  const plan = useArticleFlowPlan()
-  const progress = useArticleFlowProgress()
+export function useImportWorkflow() {
+  const plan = useImportPlan()
+  const progress = useImportProgress()
   const completionAction = ref<ArticleFlowCompletionAction>('check-in')
   const isPreparingTemplate = ref(false)
   const isRunning = ref(false)
