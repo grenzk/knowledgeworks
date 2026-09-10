@@ -7,6 +7,7 @@ import { useDocSweepTimer } from '../composables/useDocSweepTimer'
 import { useDocSweepSites } from '../composables/useDocSweepSites'
 import { useDocSweepSweep } from '../composables/useDocSweepSweep'
 import { useDocSweepSave } from '../composables/useDocSweepSave'
+import { useDocSweepExcel } from '../composables/useDocSweepExcel'
 import type { ExcelDocument, FooterStatus, SaveResultsChoice, SiteSummary } from '../types'
 
 const {
@@ -103,6 +104,16 @@ const { saveResultsAsRecovery, saveResultsWithRecovery, retrySaveResults } = use
   sweepStatus,
   showSaveErrorDialog,
   saveErrorResolver,
+})
+
+const { selectExcelFile } = useDocSweepExcel({
+  excelFile,
+  documents,
+  isSweepInitialized,
+  isSitesVerified,
+  footerStatus,
+  sweepStatus,
+  isRunning,
 })
 
 const { runSweep } = useDocSweepSweep({
@@ -255,38 +266,6 @@ function invalidateSiteVerification(): void {
   isSweepInitialized.value = false
   footerStatus.value = 'warning'
   sweepStatus.value = 'Site configuration changed. Verify sites again.'
-}
-
-async function selectExcelFile(): Promise<void> {
-  if (isRunning.value) {
-    return
-  }
-
-  const result = await window.docsweep.selectExcelFile()
-
-  if (!result.ok || !result.filePath) {
-    return
-  }
-
-  const loadResult = await window.docsweep.loadExcel(result.filePath)
-
-  if (!loadResult.ok) {
-    excelFile.value = ''
-    documents.value = []
-    isSitesVerified.value = false
-    footerStatus.value = 'error'
-    sweepStatus.value = loadResult.error ?? 'Unable to load the Excel file.'
-
-    return
-  }
-
-  excelFile.value = result.filePath
-  documents.value = loadResult.documents
-  isSweepInitialized.value = false
-
-  isSitesVerified.value = false
-  footerStatus.value = 'warning'
-  sweepStatus.value = `Loaded ${documents.value.length} control number(s). Verify enabled sites before starting.`
 }
 
 function requestCancelSweep(): void {
