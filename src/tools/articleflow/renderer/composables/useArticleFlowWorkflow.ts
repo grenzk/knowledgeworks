@@ -2,6 +2,7 @@ import { computed, nextTick, ref } from 'vue'
 import type {
   ArticleFlowCompletionAction,
   ArticleFlowImportPlan,
+  ArticleFlowPublishResult,
   ArticleFlowRunResult,
 } from '../../../../shared/types/knowledgeworks'
 import { useArticleFlowPlan } from './useArticleFlowPlan.ts'
@@ -9,7 +10,7 @@ import { useArticleFlowProgress } from './useArticleFlowProgress.ts'
 
 export type ArticleFlowStatusTone = 'idle' | 'ready' | 'running' | 'success' | 'error'
 
-type PrimaryActionButtonState = {
+type ActionButtonState = {
   disabled: boolean
   icon: string
   label: string
@@ -25,12 +26,13 @@ export function useArticleFlowWorkflow() {
   const completionAction = ref<ArticleFlowCompletionAction>('check-in')
   const isPreparingTemplate = ref(false)
   const isRunning = ref(false)
+  const isPublishingExisting = ref(false)
   const isStopping = ref(false)
   const isTemplatePrepared = ref(false)
   const statusMessage = ref('No source folder selected.')
   const statusTone = ref<ArticleFlowStatusTone>('idle')
 
-  const isBusy = computed(() => isPreparingTemplate.value || isRunning.value)
+  const isBusy = computed(() => isPreparingTemplate.value || isRunning.value || isPublishingExisting.value)
   const canPrepareTemplate = computed(
     () =>
       plan.importPlan.value !== null &&
@@ -47,8 +49,8 @@ export function useArticleFlowWorkflow() {
       !isBusy.value &&
       isTemplatePrepared.value,
   )
-  const primaryActionButton = computed<PrimaryActionButtonState>(() => {
-    if (isStopping.value) {
+  const primaryActionButton = computed<ActionButtonState>(() => {
+    if (isRunning.value && isStopping.value) {
       return {
         disabled: true,
         icon: 'pi pi-stop',
@@ -86,6 +88,23 @@ export function useArticleFlowWorkflow() {
       disabled: !canPrepareTemplate.value,
       icon: 'pi pi-file-edit',
       label: 'Prepare template',
+    }
+  })
+  const publishActionButton = computed<ActionButtonState>(() => {
+    if (isPublishingExisting.value) {
+      return {
+        disabled: isStopping.value,
+        icon: 'pi pi-stop',
+        label: isStopping.value ? 'Stopping...' : 'Stop publishing',
+        severity: 'danger',
+      }
+    }
+
+    return {
+      disabled:
+        plan.importPlan.value === null || !plan.hasSelectedArticles.value || plan.isSelectingRoot.value || isBusy.value,
+      icon: 'pi pi-upload',
+      label: 'Publish checked-in',
     }
   })
   const statusIcon = computed(() => {
@@ -210,6 +229,39 @@ export function useArticleFlowWorkflow() {
   }
 
   /**
+   * Publishes checked-in articles that match the selected local source entries.
+   */
+  async function publishExisting() {
+    const importPlan = plan.importPlan.value
+
+    if (!importPlan) {
+      return
+    }
+
+    isPublishingExisting.value = true
+    progress.resetImportProgress()
+    statusMessage.value = 'Publishing checked-in articles. See logs for details.'
+    statusTone.value = 'running'
+
+    try {
+      const result = await window.articleflow.publishExisting(importPlan.rootPath, plan.selectedImportScope.value)
+
+      setPublishResultStatus(result)
+    } catch (error) {
+      if (progress.activeSourcePathKey.value) {
+        progress.markSourcePathKeyFailed(progress.activeSourcePathKey.value)
+      }
+
+      await reportRendererError('Publishing failed.', error)
+      setFailureStatus('Publishing failed.')
+    } finally {
+      progress.activeSourcePathKey.value = null
+      isPublishingExisting.value = false
+      isStopping.value = false
+    }
+  }
+
+  /**
    * Requests a cooperative stop after ArticleFlow finishes its current eGain operation.
    */
   async function stopImport() {
@@ -222,11 +274,29 @@ export function useArticleFlowWorkflow() {
     statusTone.value = 'running'
 
     try {
-      await window.articleflow.cancelImport()
+      await window.articleflow.cancelOperation()
     } catch (error) {
       isStopping.value = false
       await reportRendererError('Could not stop the import.', error)
       setFailureStatus('Could not stop the import.')
+    }
+  }
+
+  async function stopPublishing() {
+    if (!isPublishingExisting.value || isStopping.value) {
+      return
+    }
+
+    isStopping.value = true
+    statusMessage.value = 'Stopping publishing after the current operation...'
+    statusTone.value = 'running'
+
+    try {
+      await window.articleflow.cancelOperation()
+    } catch (error) {
+      isStopping.value = false
+      await reportRendererError('Could not stop publishing.', error)
+      setFailureStatus('Could not stop publishing.')
     }
   }
 
@@ -254,6 +324,15 @@ export function useArticleFlowWorkflow() {
     }
 
     void prepareTemplate()
+  }
+
+  function handlePublishAction() {
+    if (isPublishingExisting.value) {
+      void stopPublishing()
+      return
+    }
+
+    void publishExisting()
   }
 
   function handleSourceSelection(pathKey: string, selected: boolean) {
@@ -302,6 +381,32 @@ export function useArticleFlowWorkflow() {
     statusTone.value = 'success'
   }
 
+  function setPublishResultStatus(result: ArticleFlowPublishResult) {
+    if (result.canceled) {
+      statusMessage.value = `Publishing stopped. ${formatCount(result.publishedArticleCount, 'article')} published.`
+      statusTone.value = 'ready'
+      return
+    }
+
+    const parts = [`${formatCount(result.publishedArticleCount, 'article')} published`]
+
+    if (result.alreadyPublishedArticleCount > 0) {
+      parts.push(`${formatCount(result.alreadyPublishedArticleCount, 'article')} already published`)
+    }
+
+    const issueCount = result.issues.length
+
+    if (!result.ok) {
+      parts.push(`${formatCount(issueCount, 'article')} not published`)
+      statusMessage.value = `${parts.join('; ')}. See logs.`
+      statusTone.value = 'error'
+      return
+    }
+
+    statusMessage.value = `${parts.join('; ')}.`
+    statusTone.value = 'success'
+  }
+
   function setFailureStatus(message: string, directToLogs = true) {
     statusMessage.value = directToLogs ? `${message} See logs.` : message
     statusTone.value = 'error'
@@ -313,12 +418,14 @@ export function useArticleFlowWorkflow() {
     completionAction,
     failedSourcePathKeys: progress.failedSourcePathKeys,
     handlePrimaryAction,
+    handlePublishAction,
     handleSourceSelection,
     importPlan: plan.importPlan,
     isBusy,
     isSelectingRoot: plan.isSelectingRoot,
     openLogs,
     primaryActionButton,
+    publishActionButton,
     selectedArticleCount: plan.selectedArticleCount,
     selectedSourcePathKeys: plan.selectedSourcePathKeys,
     selectCompletionAction,

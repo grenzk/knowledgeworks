@@ -9,12 +9,14 @@ const {
   completionAction,
   failedSourcePathKeys,
   handlePrimaryAction,
+  handlePublishAction,
   handleSourceSelection,
   importPlan,
   isBusy,
   isSelectingRoot,
   openLogs,
   primaryActionButton,
+  publishActionButton,
   selectedArticleCount,
   selectedSourcePathKeys,
   selectCompletionAction,
@@ -90,7 +92,7 @@ watch(activeSourcePathKey, async pathKey => {
           </div>
 
           <div class="setup-row completion-row">
-            <span id="completion-action-label" class="setup-label">Completion action</span>
+            <span id="completion-action-label" class="setup-label">Import completion</span>
             <div class="completion-control" role="radiogroup" aria-labelledby="completion-action-label">
               <button
                 type="button"
@@ -219,14 +221,26 @@ watch(activeSourcePathKey, async pathKey => {
         <span>{{ statusMessage }}</span>
       </span>
 
-      <Button
-        class="run-import-button"
-        :icon="primaryActionButton.icon"
-        :label="primaryActionButton.label"
-        :severity="primaryActionButton.severity"
-        :disabled="primaryActionButton.disabled"
-        @click="handlePrimaryAction"
-      />
+      <div class="article-flow-footer-actions">
+        <Button
+          class="publish-existing-button"
+          :icon="publishActionButton.icon"
+          :label="publishActionButton.label"
+          :severity="publishActionButton.severity ?? 'secondary'"
+          :outlined="publishActionButton.severity !== 'danger'"
+          :disabled="publishActionButton.disabled"
+          @click="handlePublishAction"
+        />
+
+        <Button
+          class="run-import-button"
+          :icon="primaryActionButton.icon"
+          :label="primaryActionButton.label"
+          :severity="primaryActionButton.severity"
+          :disabled="primaryActionButton.disabled"
+          @click="handlePrimaryAction"
+        />
+      </div>
     </footer>
   </main>
 </template>
@@ -426,6 +440,7 @@ watch(activeSourcePathKey, async pathKey => {
 }
 
 :deep(.choose-folder-button.p-button),
+:deep(.publish-existing-button.p-button),
 :deep(.run-import-button.p-button) {
   height: 44px;
   border-radius: 8px;
@@ -712,6 +727,25 @@ watch(activeSourcePathKey, async pathKey => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.article-flow-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+:deep(.publish-existing-button.p-button:not(.p-button-danger)) {
+  min-width: 156px;
+  color: var(--kw-text-light);
+  border-color: var(--kw-border);
+  background: transparent;
+}
+
+:deep(.publish-existing-button.p-button:not(.p-button-danger):enabled:hover) {
+  color: var(--kw-text-light) !important;
+  border-color: var(--kw-text-muted);
+  background: var(--kw-surface-hover);
 }
 
 .article-flow-status.ready > i,
