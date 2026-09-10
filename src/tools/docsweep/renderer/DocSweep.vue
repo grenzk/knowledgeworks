@@ -5,7 +5,7 @@ import ToggleSwitch from 'primevue/toggleswitch'
 import Dialog from 'primevue/dialog'
 import { useDocSweepTimer } from '../composables/useDocSweepTimer'
 import { useDocSweepSites } from '../composables/useDocSweepSites'
-import type { DocSweepSite, ExcelDocument, FooterStatus, SaveResultsChoice, SiteSummary } from '../types'
+import type { ExcelDocument, FooterStatus, SaveResultsChoice, SiteSummary } from '../types'
 
 const {
   sites,
