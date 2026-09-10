@@ -10,6 +10,10 @@ import {
 import { createArticleImportPlan } from '../../../src/tools/articleflow/automation/create-import-plan.ts'
 import { findArticleFlowWorkspacePage } from '../../../src/tools/articleflow/automation/find-folder-workspace-page.ts'
 import {
+  scopeArticleImportPlan,
+  type ArticleImportSelection,
+} from '../../../src/tools/articleflow/automation/scope-import-plan.ts'
+import {
   runArticleImport,
   type ArticleCompletionAction,
   type ArticleImportProgress,
@@ -109,7 +113,12 @@ export function registerArticleFlowHandlers({ addLog, browserService }: ArticleF
 
   ipcMain.handle(
     'articleflow:run',
-    async (event: IpcMainInvokeEvent, rootPath: string, completionAction: ArticleCompletionAction) => {
+    async (
+      event: IpcMainInvokeEvent,
+      rootPath: string,
+      completionAction: ArticleCompletionAction,
+      selection: unknown,
+    ) => {
       const controller = new AbortController()
 
       try {
@@ -118,15 +127,20 @@ export function registerArticleFlowHandlers({ addLog, browserService }: ArticleF
         }
 
         activeImportController = controller
-        validateRunRequest(rootPath, completionAction)
+        validateRunRequest(rootPath, completionAction, selection)
 
         const plan = await createArticleImportPlan(rootPath)
+        const scopedPlan = scopeArticleImportPlan(plan, selection)
+
+        if (scopedPlan.articles.length === 0) {
+          throw new Error('Select at least one ArticleFlow article before running the import.')
+        }
 
         addLog(
           'info',
           'ArticleFlow',
-          `Importing ${formatCount(plan.articles.length, 'article')} from ${basename(plan.rootPath)}.`,
-          `Completion action: ${completionAction}`,
+          `Importing ${formatCount(scopedPlan.articles.length, 'selected article')} from ${basename(plan.rootPath)}.`,
+          `${formatCount(scopedPlan.folderPaths.length, 'folder')} in scope. Completion action: ${completionAction}`,
         )
 
         const session = await connectToBrowser(browserService.getCdpUrl())
@@ -134,7 +148,7 @@ export function registerArticleFlowHandlers({ addLog, browserService }: ArticleF
 
         const templateSetup = await completeArticleTemplateSetup(articlePage, plan, controller.signal)
 
-        const result = await runArticleImport(articlePage, plan, completionAction, {
+        const result = await runArticleImport(articlePage, scopedPlan, completionAction, {
           articleTemplateTitle: articleFlowTemplateTitle,
           onProgress: progress => {
             logProgress(addLog, progress, completionAction)
@@ -217,12 +231,40 @@ function toProgressUpdate(progress: ArticleImportProgress): ArticleFlowProgressU
   }
 }
 
-function validateRunRequest(rootPath: string, completionAction: ArticleCompletionAction) {
+function validateRunRequest(
+  rootPath: string,
+  completionAction: ArticleCompletionAction,
+  selection: unknown,
+): asserts selection is ArticleImportSelection {
   validateRootPath(rootPath)
 
   if (completionAction !== 'check-in' && completionAction !== 'publish') {
     throw new Error(`Unsupported ArticleFlow completion action: ${completionAction}`)
   }
+
+  if (!isArticleImportSelection(selection)) {
+    throw new Error('The selected ArticleFlow import scope is invalid.')
+  }
+}
+
+function isArticleImportSelection(value: unknown): value is ArticleImportSelection {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const selection = value as Partial<ArticleImportSelection>
+
+  return (
+    Array.isArray(selection.articlePaths) &&
+    selection.articlePaths.every(path => typeof path === 'string' && path.length > 0) &&
+    Array.isArray(selection.folderPaths) &&
+    selection.folderPaths.every(
+      path =>
+        Array.isArray(path) &&
+        path.length > 0 &&
+        path.every(segment => typeof segment === 'string' && segment.length > 0),
+    )
+  )
 }
 
 function validateRootPath(rootPath: string) {

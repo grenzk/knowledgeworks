@@ -51,6 +51,11 @@ export type ArticleFlowImportPlan = {
   rootPath: string
 }
 
+export type ArticleFlowImportSelection = {
+  articlePaths: string[]
+  folderPaths: string[][]
+}
+
 export type ArticleFlowSelectionResult = {
   canceled: boolean
   ok: boolean
@@ -109,7 +114,11 @@ export type ArticleFlowApi = {
   cancelImport: () => Promise<AutomationCancelResult>
   onImportProgress: (callback: (progress: ArticleFlowProgressUpdate) => void) => () => void
   prepareTemplate: (rootPath: string) => Promise<ArticleFlowTemplatePreparationResult>
-  runImport: (rootPath: string, completionAction: ArticleFlowCompletionAction) => Promise<ArticleFlowRunResult>
+  runImport: (
+    rootPath: string,
+    completionAction: ArticleFlowCompletionAction,
+    selection: ArticleFlowImportSelection,
+  ) => Promise<ArticleFlowRunResult>
   selectRoot: () => Promise<ArticleFlowSelectionResult>
 }
 

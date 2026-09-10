@@ -1,115 +1,31 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type {
-  ArticleFlowCompletionAction,
-  ArticleFlowImportPlan,
-  ArticleFlowProgressUpdate,
-  ArticleFlowRunResult,
-} from '../../../shared/types/knowledgeworks'
+import { nextTick, ref, watch } from 'vue'
 import SourceStructureTree from './SourceStructureTree.vue'
+import { useArticleFlowWorkflow } from './composables/useArticleFlowWorkflow.ts'
 
-type ArticleFlowStatusTone = 'idle' | 'ready' | 'running' | 'success' | 'error'
-type PrimaryActionButtonState = {
-  disabled: boolean
-  icon: string
-  label: string
-  severity?: 'danger'
-}
-
-const completionAction = ref<ArticleFlowCompletionAction>('check-in')
-const importPlan = ref<ArticleFlowImportPlan | null>(null)
-const isPreparingTemplate = ref(false)
-const isSelectingRoot = ref(false)
-const isRunning = ref(false)
-const isStopping = ref(false)
-const isTemplatePrepared = ref(false)
-const statusMessage = ref('No source folder selected.')
-const statusTone = ref<ArticleFlowStatusTone>('idle')
-const activeSourcePathKey = ref<string | null>(null)
-const completedSourcePathKeys = ref<Set<string>>(new Set())
-const failedSourcePathKeys = ref<Set<string>>(new Set())
+const {
+  activeSourcePathKey,
+  completedSourcePathKeys,
+  completionAction,
+  failedSourcePathKeys,
+  handlePrimaryAction,
+  handleSourceSelection,
+  importPlan,
+  isBusy,
+  isSelectingRoot,
+  openLogs,
+  primaryActionButton,
+  selectedArticleCount,
+  selectedSourcePathKeys,
+  selectCompletionAction,
+  selectRoot,
+  sourceFilePaths,
+  sourceFolderName,
+  statusIcon,
+  statusMessage,
+  statusTone,
+} = useArticleFlowWorkflow()
 const sourceTreeFrame = ref<HTMLElement | null>(null)
-let removeImportProgressListener: (() => void) | undefined
-
-const sourceFolderName = computed(() => {
-  const rootPath = importPlan.value?.rootPath
-
-  return rootPath?.split(/[\\/]/).filter(Boolean).at(-1) ?? 'No folder selected'
-})
-const sourceFilePaths = computed(
-  () =>
-    importPlan.value?.articles.map(article => [
-      sourceFolderName.value,
-      ...article.relativeSourcePath.split(/[\\/]/).filter(Boolean),
-    ]) ?? [],
-)
-const isBusy = computed(() => isPreparingTemplate.value || isRunning.value)
-const canPrepareTemplate = computed(
-  () => importPlan.value !== null && !isSelectingRoot.value && !isBusy.value && !isTemplatePrepared.value,
-)
-const canRun = computed(
-  () => importPlan.value !== null && !isSelectingRoot.value && !isBusy.value && isTemplatePrepared.value,
-)
-const primaryActionButton = computed<PrimaryActionButtonState>(() => {
-  if (isStopping.value) {
-    return {
-      disabled: true,
-      icon: 'pi pi-stop',
-      label: 'Stopping...',
-      severity: 'danger',
-    }
-  }
-
-  if (isRunning.value) {
-    return {
-      disabled: false,
-      icon: 'pi pi-stop',
-      label: 'Stop import',
-      severity: 'danger',
-    }
-  }
-
-  if (isPreparingTemplate.value) {
-    return {
-      disabled: true,
-      icon: 'pi pi-spinner pi-spin',
-      label: 'Preparing...',
-    }
-  }
-
-  if (isTemplatePrepared.value) {
-    return {
-      disabled: !canRun.value,
-      icon: 'pi pi-play',
-      label: 'Continue import',
-    }
-  }
-
-  return {
-    disabled: !canPrepareTemplate.value,
-    icon: 'pi pi-file-edit',
-    label: 'Prepare template',
-  }
-})
-const statusIcon = computed(() => {
-  const icons: Record<ArticleFlowStatusTone, string> = {
-    error: 'pi pi-exclamation-circle',
-    idle: 'pi pi-circle',
-    ready: 'pi pi-file-check',
-    running: 'pi pi-spinner pi-spin',
-    success: 'pi pi-check-circle',
-  }
-
-  return icons[statusTone.value]
-})
-
-onMounted(() => {
-  removeImportProgressListener = window.articleflow.onImportProgress(handleImportProgress)
-})
-
-onBeforeUnmount(() => {
-  removeImportProgressListener?.()
-})
 
 watch(activeSourcePathKey, async pathKey => {
   if (!pathKey) {
@@ -121,287 +37,6 @@ watch(activeSourcePathKey, async pathKey => {
     block: 'nearest',
   })
 })
-
-/**
- * Opens the native directory picker and scans the selected taxonomy.
- */
-async function selectRoot() {
-  isSelectingRoot.value = true
-  statusMessage.value = 'Reading source folder...'
-  statusTone.value = 'running'
-
-  try {
-    const result = await window.articleflow.selectRoot()
-
-    if (result.canceled) {
-      statusMessage.value = importPlan.value ? 'Plan unchanged.' : 'No source folder selected.'
-      statusTone.value = importPlan.value ? 'ready' : 'idle'
-      return
-    }
-
-    if (!result.plan) {
-      await reportRendererError(
-        'Could not read the selected source folder.',
-        'ArticleFlow did not return an import plan.',
-      )
-      setFailureStatus('Could not read the selected source folder.')
-      return
-    }
-
-    importPlan.value = result.plan
-    isTemplatePrepared.value = false
-    resetImportProgress()
-    statusMessage.value = formatPlanStatus(result.plan)
-    statusTone.value = 'ready'
-  } catch {
-    setFailureStatus('Could not read the selected source folder.')
-  } finally {
-    isSelectingRoot.value = false
-  }
-}
-
-/**
- * Creates or reuses the product root and opens its template article for the
- * user's one-time Custom Attributes setup.
- */
-async function prepareTemplate() {
-  const plan = importPlan.value
-
-  if (!plan) {
-    return
-  }
-
-  isPreparingTemplate.value = true
-  statusMessage.value = 'Preparing the product template in eGain...'
-  statusTone.value = 'running'
-
-  try {
-    const result = await window.articleflow.prepareTemplate(plan.rootPath)
-
-    if (result.canceled) {
-      statusMessage.value = 'Template preparation canceled.'
-      statusTone.value = 'ready'
-      return
-    }
-
-    if (!result.ok) {
-      await reportRendererError('Template preparation failed.', 'ArticleFlow returned an unsuccessful result.')
-      setFailureStatus('Template preparation failed.')
-      return
-    }
-
-    isTemplatePrepared.value = true
-
-    if (result.rootCreated) {
-      markSourcePathCreated([result.rootName])
-    }
-
-    statusMessage.value = 'Set custom attributes in eGain, press Done, then continue.'
-    statusTone.value = 'ready'
-  } catch {
-    setFailureStatus('Template preparation failed.')
-  } finally {
-    isPreparingTemplate.value = false
-  }
-}
-
-/**
- * Rebuilds and runs the selected plan against the current eGain folder.
- */
-async function runImport() {
-  const plan = importPlan.value
-
-  if (!plan) {
-    return
-  }
-
-  isRunning.value = true
-  activeSourcePathKey.value = null
-  statusMessage.value = 'Import in progress. See logs for details.'
-  statusTone.value = 'running'
-
-  try {
-    const result = await window.articleflow.runImport(plan.rootPath, completionAction.value)
-
-    setResultStatus(result)
-  } catch {
-    if (activeSourcePathKey.value) {
-      markSourcePathKeyFailed(activeSourcePathKey.value)
-    }
-
-    setFailureStatus('Import failed.')
-  } finally {
-    activeSourcePathKey.value = null
-    isRunning.value = false
-    isStopping.value = false
-  }
-}
-
-/**
- * Requests a cooperative stop after ArticleFlow finishes its current eGain operation.
- */
-async function stopImport() {
-  if (!isRunning.value || isStopping.value) {
-    return
-  }
-
-  isStopping.value = true
-  statusMessage.value = 'Stopping import after the current operation...'
-  statusTone.value = 'running'
-
-  try {
-    await window.articleflow.cancelImport()
-  } catch (error) {
-    isStopping.value = false
-    await reportRendererError('Could not stop the import.', error)
-    setFailureStatus('Could not stop the import.')
-  }
-}
-
-/**
- * Opens or focuses the shared KnowledgeWorks log window.
- */
-async function openLogs() {
-  try {
-    await window.knowledgeworks.openLogs()
-  } catch (error) {
-    await reportRendererError('Could not open the log window.', error)
-    setFailureStatus('Could not open the log window.', false)
-  }
-}
-
-function handlePrimaryAction() {
-  if (isRunning.value) {
-    void stopImport()
-    return
-  }
-
-  if (isTemplatePrepared.value) {
-    void runImport()
-    return
-  }
-
-  void prepareTemplate()
-}
-
-function handleImportProgress(progress: ArticleFlowProgressUpdate) {
-  const pathKey = getSourcePathKey(progress.path)
-
-  if (progress.status === 'started') {
-    removeSourcePath(failedSourcePathKeys, pathKey)
-    activeSourcePathKey.value = pathKey
-    return
-  }
-
-  if (progress.status === 'created') {
-    markSourcePathCreated(progress.path)
-  } else if (progress.status === 'failed') {
-    markSourcePathFailed(progress.path)
-  } else {
-    removeSourcePath(failedSourcePathKeys, pathKey)
-  }
-
-  if (activeSourcePathKey.value === pathKey) {
-    activeSourcePathKey.value = null
-  }
-}
-
-function markSourcePathCreated(path: string[]) {
-  const pathKey = getSourcePathKey(path)
-  const nextCompletedPaths = new Set(completedSourcePathKeys.value)
-
-  nextCompletedPaths.add(pathKey)
-  completedSourcePathKeys.value = nextCompletedPaths
-  removeSourcePath(failedSourcePathKeys, pathKey)
-}
-
-function markSourcePathFailed(path: string[]) {
-  markSourcePathKeyFailed(getSourcePathKey(path))
-}
-
-function markSourcePathKeyFailed(pathKey: string) {
-  const nextFailedPaths = new Set(failedSourcePathKeys.value)
-
-  nextFailedPaths.add(pathKey)
-  failedSourcePathKeys.value = nextFailedPaths
-}
-
-function removeSourcePath(pathKeys: typeof failedSourcePathKeys, pathKey: string) {
-  if (!pathKeys.value.has(pathKey)) {
-    return
-  }
-
-  const nextPathKeys = new Set(pathKeys.value)
-
-  nextPathKeys.delete(pathKey)
-  pathKeys.value = nextPathKeys
-}
-
-function resetImportProgress() {
-  activeSourcePathKey.value = null
-  completedSourcePathKeys.value = new Set()
-  failedSourcePathKeys.value = new Set()
-}
-
-function getSourcePathKey(path: string[]) {
-  return JSON.stringify(path)
-}
-
-function setResultStatus(result: ArticleFlowRunResult) {
-  if (result.canceled) {
-    statusMessage.value = `Import stopped. ${formatCount(result.createdArticleCount, 'article')} completed.`
-    statusTone.value = 'ready'
-    return
-  }
-
-  const action = completionAction.value === 'check-in' ? 'checked in' : 'published'
-  const parts = [`${formatCount(result.createdArticleCount, 'article')} ${action}`]
-
-  if (result.existingArticleCount > 0) {
-    parts.push(`${formatCount(result.existingArticleCount, 'article')} already existed`)
-  }
-
-  if (!result.ok) {
-    parts.push(`${formatCount(result.failedArticles.length, 'article')} failed`)
-    statusMessage.value = `${parts.join('; ')}. See logs.`
-    statusTone.value = 'error'
-    return
-  }
-
-  statusMessage.value = `${parts.join('; ')}.`
-  statusTone.value = 'success'
-}
-
-function formatPlanStatus(plan: ArticleFlowImportPlan) {
-  return `${formatCount(plan.articles.length, 'article')} across ${formatCount(plan.folderPaths.length, 'folder')}.`
-}
-
-function formatCount(count: number, noun: string) {
-  return `${count} ${noun}${count === 1 ? '' : 's'}`
-}
-
-function selectCompletionAction(action: ArticleFlowCompletionAction, event?: KeyboardEvent) {
-  const control = event ? (event.currentTarget as HTMLElement).parentElement : null
-
-  completionAction.value = action
-
-  if (control) {
-    void nextTick(() => {
-      control.querySelector<HTMLElement>(`[data-action="${action}"]`)?.focus()
-    })
-  }
-}
-
-function setFailureStatus(message: string, directToLogs = true) {
-  statusMessage.value = directToLogs ? `${message} See logs.` : message
-  statusTone.value = 'error'
-}
-
-async function reportRendererError(message: string, error: unknown) {
-  const detail = error instanceof Error ? (error.stack ?? error.message) : String(error)
-
-  await window.knowledgeworks.writeLog('error', 'ArticleFlow', message, detail).catch(() => undefined)
-}
 </script>
 
 <template>
@@ -545,6 +180,7 @@ async function reportRendererError(message: string, error: unknown) {
                   <i class="pi pi-chevron-right detail-chevron" aria-hidden="true" />
                   <span>Folder hierarchy</span>
                 </span>
+                <strong class="selection-count">{{ selectedArticleCount }} selected</strong>
               </summary>
               <div ref="sourceTreeFrame" class="source-tree-frame">
                 <SourceStructureTree
@@ -553,6 +189,9 @@ async function reportRendererError(message: string, error: unknown) {
                   :failed-path-keys="failedSourcePathKeys"
                   :file-paths="sourceFilePaths"
                   :folder-paths="importPlan.folderPaths"
+                  :disabled="isBusy"
+                  :selected-path-keys="selectedSourcePathKeys"
+                  @select="handleSourceSelection"
                 />
               </div>
             </details>
@@ -1012,6 +651,14 @@ async function reportRendererError(message: string, error: unknown) {
   color: var(--kw-text-light);
   font-size: 0.8125rem;
   font-weight: 600;
+}
+
+.source-details .selection-count {
+  color: var(--kw-text-muted);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.125rem;
+  white-space: nowrap;
 }
 
 .ignored-details ul {
