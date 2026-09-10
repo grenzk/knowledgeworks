@@ -91,6 +91,20 @@ const { contextBridge, ipcRenderer } = require('electron')
  *   failedArticles: Array<{ message: string, relativeSourcePath: string }>,
  *   ok: boolean,
  * }} ArticleFlowRunResult
+ *
+ * @typedef {{
+ *   alreadyPublishedArticleCount: number,
+ *   canceled: boolean,
+ *   issues: Array<{
+ *     kind: 'failed' | 'missing' | 'unavailable',
+ *     message: string,
+ *     relativeSourcePath: string,
+ *   }>,
+ *   missingArticleCount: number,
+ *   ok: boolean,
+ *   publishedArticleCount: number,
+ *   unavailableArticleCount: number,
+ * }} ArticleFlowPublishResult
  */
 
 /** @returns {Promise<MediaBridgeOkResult>} */
@@ -168,7 +182,7 @@ contextBridge.exposeInMainWorld('knowledgeworks', {
 
 contextBridge.exposeInMainWorld('articleflow', {
   /** @returns {Promise<AutomationCancelResult>} */
-  cancelImport: () => ipcRenderer.invoke('articleflow:cancel'),
+  cancelOperation: () => ipcRenderer.invoke('articleflow:cancel'),
 
   /**
    * @param {(progress: ArticleFlowProgressUpdate) => void} callback
@@ -187,6 +201,13 @@ contextBridge.exposeInMainWorld('articleflow', {
    * @returns {Promise<ArticleFlowTemplatePreparationResult>}
    */
   prepareTemplate: rootPath => ipcRenderer.invoke('articleflow:prepare-template', rootPath),
+
+  /**
+   * @param {string} rootPath
+   * @param {ArticleFlowImportSelection} selection
+   * @returns {Promise<ArticleFlowPublishResult>}
+   */
+  publishExisting: (rootPath, selection) => ipcRenderer.invoke('articleflow:publish-existing', rootPath, selection),
 
   /**
    * @param {string} rootPath

@@ -10,6 +10,10 @@ import {
 import { createArticleImportPlan } from '../../../src/tools/articleflow/automation/create-import-plan.ts'
 import { findArticleFlowWorkspacePage } from '../../../src/tools/articleflow/automation/find-folder-workspace-page.ts'
 import {
+  publishExistingArticles,
+  type ExistingArticlePublishProgress,
+} from '../../../src/tools/articleflow/automation/publish-existing-articles.ts'
+import {
   scopeArticleImportPlan,
   type ArticleImportSelection,
 } from '../../../src/tools/articleflow/automation/scope-import-plan.ts'
@@ -39,14 +43,14 @@ const selectDirectoryOptions: OpenDialogOptions = {
 }
 
 export function registerArticleFlowHandlers({ addLog, browserService }: ArticleFlowHandlerDependencies) {
-  let activeImportController: AbortController | undefined
+  let activeOperationController: AbortController | undefined
 
   ipcMain.handle('articleflow:cancel', () => {
-    if (!activeImportController) {
+    if (!activeOperationController) {
       return { cancellationRequested: false, ok: true }
     }
 
-    activeImportController.abort()
+    activeOperationController.abort()
     addLog('info', 'ArticleFlow', 'Stopping ArticleFlow after the current operation.')
 
     return { cancellationRequested: true, ok: true }
@@ -81,8 +85,8 @@ export function registerArticleFlowHandlers({ addLog, browserService }: ArticleF
 
   ipcMain.handle('articleflow:prepare-template', async (_event: IpcMainInvokeEvent, rootPath: string) => {
     try {
-      if (activeImportController) {
-        throw new Error('An ArticleFlow import is already running.')
+      if (activeOperationController) {
+        throw new Error('An ArticleFlow operation is already running.')
       }
 
       validateRootPath(rootPath)
@@ -122,11 +126,11 @@ export function registerArticleFlowHandlers({ addLog, browserService }: ArticleF
       const controller = new AbortController()
 
       try {
-        if (activeImportController) {
-          throw new Error('An ArticleFlow import is already running.')
+        if (activeOperationController) {
+          throw new Error('An ArticleFlow operation is already running.')
         }
 
-        activeImportController = controller
+        activeOperationController = controller
         validateRunRequest(rootPath, completionAction, selection)
 
         const plan = await createArticleImportPlan(rootPath)
@@ -197,8 +201,130 @@ export function registerArticleFlowHandlers({ addLog, browserService }: ArticleF
         addLog('error', 'ArticleFlow', getErrorMessage(error), getErrorDetail(error))
         throw error
       } finally {
-        if (activeImportController === controller) {
-          activeImportController = undefined
+        if (activeOperationController === controller) {
+          activeOperationController = undefined
+        }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    'articleflow:publish-existing',
+    async (event: IpcMainInvokeEvent, rootPath: string, selection: unknown) => {
+      const controller = new AbortController()
+
+      try {
+        if (activeOperationController) {
+          throw new Error('An ArticleFlow operation is already running.')
+        }
+
+        activeOperationController = controller
+        validateRootPath(rootPath)
+
+        if (!isArticleImportSelection(selection)) {
+          throw new Error('The selected ArticleFlow publish scope is invalid.')
+        }
+
+        const plan = await createArticleImportPlan(rootPath)
+        const scopedPlan = scopeArticleImportPlan(plan, selection)
+
+        if (scopedPlan.articles.length === 0) {
+          throw new Error('Select at least one ArticleFlow article before publishing.')
+        }
+
+        const parentWindow = BrowserWindow.fromWebContents(event.sender)
+        const confirmationOptions = {
+          buttons: ['Cancel', 'Publish articles'],
+          cancelId: 0,
+          defaultId: 1,
+          detail: `${formatCount(scopedPlan.articles.length, 'selected article')} will be published from ${basename(plan.rootPath)}. Already-published articles will be skipped.`,
+          message: 'Publish checked-in articles?',
+          noLink: true,
+          title: 'ArticleFlow',
+          type: 'warning' as const,
+        }
+        const confirmation = parentWindow
+          ? await dialog.showMessageBox(parentWindow, confirmationOptions)
+          : await dialog.showMessageBox(confirmationOptions)
+
+        if (confirmation.response !== 1) {
+          return createCanceledPublishResult()
+        }
+
+        addLog(
+          'info',
+          'ArticleFlow',
+          `Publishing ${formatCount(scopedPlan.articles.length, 'selected article')} from ${basename(plan.rootPath)}.`,
+        )
+
+        const session = await connectToBrowser(browserService.getCdpUrl())
+        const articlePage = findArticleFlowWorkspacePage(session.pages)
+        const result = await publishExistingArticles(articlePage, scopedPlan, {
+          onProgress: progress => {
+            logPublishProgress(addLog, progress)
+            sendPublishProgress(event, progress)
+          },
+          signal: controller.signal,
+        })
+        const publishedArticleCount = result.publishedArticles.length
+        const alreadyPublishedArticleCount = result.alreadyPublishedArticles.length
+        const missingArticleCount = result.missingArticles.length
+        const unavailableArticleCount = result.unavailableArticles.length
+        const failedArticleCount = result.failedArticles.length
+        const issues = [
+          ...result.missingArticles.map(article => ({
+            kind: 'missing' as const,
+            message: 'No exact-title article was found in the expected eGain folder.',
+            relativeSourcePath: article.relativeSourcePath,
+          })),
+          ...result.unavailableArticles.map(({ article, message }) => ({
+            kind: 'unavailable' as const,
+            message,
+            relativeSourcePath: article.relativeSourcePath,
+          })),
+          ...result.failedArticles.map(({ article, message }) => ({
+            kind: 'failed' as const,
+            message,
+            relativeSourcePath: article.relativeSourcePath,
+          })),
+        ]
+        const hasIssues = issues.length > 0
+        const summary = formatPublishSummary(
+          publishedArticleCount,
+          alreadyPublishedArticleCount,
+          missingArticleCount,
+          unavailableArticleCount,
+          failedArticleCount,
+        )
+
+        if (result.canceled) {
+          addLog('info', 'ArticleFlow', `Publishing stopped after ${formatCount(publishedArticleCount, 'article')}.`)
+        } else if (hasIssues) {
+          addLog(
+            'error',
+            'ArticleFlow',
+            summary,
+            issues.map(issue => `${issue.relativeSourcePath}: ${issue.message}`).join('\n'),
+          )
+        } else {
+          addLog('success', 'ArticleFlow', summary)
+        }
+
+        return {
+          alreadyPublishedArticleCount,
+          canceled: result.canceled,
+          issues,
+          missingArticleCount,
+          ok: !result.canceled && !hasIssues,
+          publishedArticleCount,
+          unavailableArticleCount,
+        }
+      } catch (error) {
+        addLog('error', 'ArticleFlow', getErrorMessage(error), getErrorDetail(error))
+        throw error
+      } finally {
+        if (activeOperationController === controller) {
+          activeOperationController = undefined
         }
       }
     },
@@ -229,6 +355,28 @@ function toProgressUpdate(progress: ArticleImportProgress): ArticleFlowProgressU
     path: [...progress.article.folderPath, filename ?? progress.article.title],
     status: progress.status,
   }
+}
+
+function sendPublishProgress(event: IpcMainInvokeEvent, progress: ExistingArticlePublishProgress) {
+  if (event.sender.isDestroyed()) {
+    return
+  }
+
+  const filename = progress.article.relativeSourcePath.split(/[\\/]/).filter(Boolean).at(-1)
+  const status =
+    progress.status === 'started'
+      ? 'started'
+      : progress.status === 'published'
+        ? 'created'
+        : progress.status === 'already-published'
+          ? 'existing'
+          : 'failed'
+
+  event.sender.send('articleflow:progress', {
+    kind: 'article',
+    path: [...progress.article.folderPath, filename ?? progress.article.title],
+    status,
+  } satisfies ArticleFlowProgressUpdate)
 }
 
 function validateRunRequest(
@@ -317,6 +465,27 @@ function logProgress(addLog: AddLog, progress: ArticleImportProgress, completion
   }
 }
 
+function logPublishProgress(addLog: AddLog, progress: ExistingArticlePublishProgress) {
+  const detail = progress.article.relativeSourcePath
+
+  if (progress.status === 'started') {
+    addLog('info', 'ArticleFlow', `Publishing ${progress.article.title}.`, detail)
+  } else if (progress.status === 'published') {
+    addLog('success', 'ArticleFlow', `${progress.article.title} published.`, detail)
+  } else if (progress.status === 'already-published') {
+    addLog('info', 'ArticleFlow', `Skipped ${progress.article.title}; it is already published.`, detail)
+  } else if (progress.status === 'missing') {
+    addLog('error', 'ArticleFlow', `${progress.article.title} was not found in its expected eGain folder.`, detail)
+  } else if ('message' in progress) {
+    addLog(
+      'error',
+      'ArticleFlow',
+      `${progress.article.title} could not be published.`,
+      `${detail}: ${progress.message}`,
+    )
+  }
+}
+
 function formatCompletionResult(completionAction: ArticleCompletionAction) {
   return completionAction === 'check-in' ? 'checked in' : 'published'
 }
@@ -338,6 +507,46 @@ function formatImportSummary(
   }
 
   return `${parts.join('; ')}.`
+}
+
+function formatPublishSummary(
+  publishedArticleCount: number,
+  alreadyPublishedArticleCount: number,
+  missingArticleCount: number,
+  unavailableArticleCount: number,
+  failedArticleCount: number,
+) {
+  const parts = [`${formatCount(publishedArticleCount, 'article')} published`]
+
+  if (alreadyPublishedArticleCount > 0) {
+    parts.push(`${formatCount(alreadyPublishedArticleCount, 'article')} already published`)
+  }
+
+  if (missingArticleCount > 0) {
+    parts.push(`${formatCount(missingArticleCount, 'article')} missing`)
+  }
+
+  if (unavailableArticleCount > 0) {
+    parts.push(`${formatCount(unavailableArticleCount, 'article')} unavailable`)
+  }
+
+  if (failedArticleCount > 0) {
+    parts.push(`${formatCount(failedArticleCount, 'article')} failed`)
+  }
+
+  return `${parts.join('; ')}.`
+}
+
+function createCanceledPublishResult() {
+  return {
+    alreadyPublishedArticleCount: 0,
+    canceled: true,
+    issues: [],
+    missingArticleCount: 0,
+    ok: true,
+    publishedArticleCount: 0,
+    unavailableArticleCount: 0,
+  }
 }
 
 function formatCount(count: number, noun: string) {
