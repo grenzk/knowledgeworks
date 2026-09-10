@@ -58,11 +58,7 @@ const {
   )
 })
 
-const {
-  enabledSites,
-  canStartSweep,
-  footerStatusMessage,
-} = useDocSweepReadiness({
+const { enabledSites, canStartSweep, footerStatusMessage } = useDocSweepReadiness({
   excelFile,
   documentsLength: computed(() => documents.value.length),
   sites,
