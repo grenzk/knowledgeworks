@@ -6,6 +6,7 @@ import Dialog from 'primevue/dialog'
 import { useDocSweepTimer } from '../composables/useDocSweepTimer'
 import { useDocSweepSites } from '../composables/useDocSweepSites'
 import { useDocSweepSweep } from '../composables/useDocSweepSweep'
+import { useDocSweepSave } from '../composables/useDocSweepSave'
 import type { ExcelDocument, FooterStatus, SaveResultsChoice, SiteSummary } from '../types'
 
 const {
@@ -35,7 +36,7 @@ const totalCount = ref(0)
 const sweepDocuments = ref<ExcelDocument[]>([])
 const saveResultsChoice = ref<SaveResultsChoice | null>(null)
 let saveResultsResolver: ((choice: SaveResultsChoice) => void) | null = null
-let saveErrorResolver: ((saved: boolean) => void) | null = null
+const saveErrorResolver = ref<((saved: boolean) => void) | null>(null)
 const footerStatus = ref<FooterStatus>('warning')
 
 const summary = ref<SiteSummary[]>([
@@ -94,6 +95,15 @@ const {
 })
 
 const enabledSites = computed(() => sites.value.filter(site => site.enabled))
+
+const { saveResultsAsRecovery, saveResultsWithRecovery, retrySaveResults } = useDocSweepSave({
+  excelFile,
+  sweepDocuments,
+  enabledSites: computed(() => enabledSites.value.map(site => site.name)),
+  sweepStatus,
+  showSaveErrorDialog,
+  saveErrorResolver,
+})
 
 const { runSweep } = useDocSweepSweep({
   sweepDocuments,
@@ -279,129 +289,6 @@ async function selectExcelFile(): Promise<void> {
   sweepStatus.value = `Loaded ${documents.value.length} control number(s). Verify enabled sites before starting.`
 }
 
-async function saveSweepResults(): Promise<boolean> {
-  const documentsToSave = sweepDocuments.value.map(document => ({
-    row: document.row,
-    controlNumber: document.controlNumber,
-    masw: document.masw,
-    vertiv: document.vertiv,
-    assetLibrary: document.assetLibrary,
-    pdCloud: document.pdCloud,
-  }))
-
-  const enabledSites = sites.value.filter(site => site.enabled).map(site => site.name)
-
-  const result = await window.docsweep.saveExcel(excelFile.value, documentsToSave, enabledSites)
-
-  if (!result.ok) {
-    console.error('DocSweep Excel save failed:', result.message)
-    return false
-  }
-
-  return true
-}
-
-async function saveSweepResultsAs(): Promise<boolean> {
-  const dialogResult = await window.docsweep.saveExcelAs()
-
-  if (dialogResult.canceled || !dialogResult.ok || !dialogResult.filePath) {
-    return false
-  }
-
-  const documentsToSave = sweepDocuments.value.map(document => ({
-    row: document.row,
-    controlNumber: document.controlNumber,
-    masw: document.masw,
-    vertiv: document.vertiv,
-    assetLibrary: document.assetLibrary,
-    pdCloud: document.pdCloud,
-  }))
-
-  const enabledSites = sites.value.filter(site => site.enabled).map(site => site.name)
-
-  const saveResult = await window.docsweep.saveExcel(
-    excelFile.value,
-    documentsToSave,
-    enabledSites,
-    dialogResult.filePath,
-  )
-
-  if (!saveResult.ok) {
-    throw new Error(saveResult.message || 'Unable to save Excel file.')
-  }
-
-  return true
-}
-
-async function saveResultsAsRecovery(): Promise<void> {
-  try {
-    const saved = await saveSweepResultsAs()
-
-    if (!saved) {
-      // User cancelled Save As or the dialog did not complete.
-      // Keep the save-error dialog open so the results remain recoverable.
-      showSaveErrorDialog.value = true
-      return
-    }
-
-    showSaveErrorDialog.value = false
-
-    saveErrorResolver?.(true)
-    saveErrorResolver = null
-
-    footerStatus.value = 'ready'
-    sweepStatus.value = 'Sweep results saved successfully.'
-  } catch (error) {
-    console.error('DocSweep Save As failed:', error)
-
-    showSaveErrorDialog.value = true
-
-    sweepStatus.value = error instanceof Error ? error.message : 'Unable to save Excel file.'
-  }
-}
-
-async function saveResultsWithRecovery(): Promise<boolean> {
-  sweepStatus.value = 'Saving sweep results to Excel...'
-
-  try {
-    const saved = await saveSweepResults()
-
-    if (saved) {
-      return true
-    }
-
-    sweepStatus.value = 'Unable to save results to the current Excel file.'
-  } catch (error) {
-    console.error('DocSweep Excel save failed:', error)
-
-    sweepStatus.value = error instanceof Error ? error.message : 'Unable to save results to Excel.'
-  }
-
-  return await handleSaveFailure()
-}
-
-async function handleSaveFailure(): Promise<boolean> {
-  showSaveErrorDialog.value = true
-
-  return new Promise(resolve => {
-    saveErrorResolver = resolve
-  })
-}
-
-async function retrySaveResults(): Promise<void> {
-  showSaveErrorDialog.value = false
-
-  const saved = await saveSweepResults()
-
-  if (saved) {
-    saveErrorResolver?.(true)
-    saveErrorResolver = null
-    return
-  }
-
-  showSaveErrorDialog.value = true
-}
-
 function requestCancelSweep(): void {
   if (!isRunning.value || showSaveResultsDialog.value || isSearchFinishing.value) {
     return
@@ -481,8 +368,7 @@ async function startSweep(): Promise<void> {
     pdCloud: document.pdCloud,
   }))
 
-  totalCount.value =
-    sweepDocuments.value.length * enabledSites.value.length
+  totalCount.value = sweepDocuments.value.length * enabledSites.value.length
 
   try {
     if (sweepDocuments.value.length === 0) {
@@ -505,14 +391,12 @@ async function startSweep(): Promise<void> {
 
     if (saved) {
       footerStatus.value = 'ready'
-      sweepStatus.value =
-        'Sweep complete. Results saved to Excel.'
+      sweepStatus.value = 'Sweep complete. Results saved to Excel.'
     }
   } catch (error) {
     console.error('DocSweep sweep failed:', error)
     footerStatus.value = 'error'
-    sweepStatus.value =
-      error instanceof Error ? error.message : 'Sweep failed.'
+    sweepStatus.value = error instanceof Error ? error.message : 'Sweep failed.'
   } finally {
     stopElapsedTimer()
     isRunning.value = false
