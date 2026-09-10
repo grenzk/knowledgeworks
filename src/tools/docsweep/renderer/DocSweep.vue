@@ -1,221 +1,164 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import InputText from 'primevue/inputtext'
 import ToggleSwitch from 'primevue/toggleswitch'
 import Dialog from 'primevue/dialog'
+import { useDocSweepTimer } from '../composables/useDocSweepTimer'
+import { useDocSweepSites } from '../composables/useDocSweepSites'
+import { useDocSweepSweep } from '../composables/useDocSweepSweep'
+import { useDocSweepSave } from '../composables/useDocSweepSave'
+import { useDocSweepExcel } from '../composables/useDocSweepExcel'
+import { useDocSweepCancellation } from '../composables/useDocSweepCancellation'
+import { useDocSweepResults } from '../composables/useDocSweepResults'
+import { useDocSweepReadiness } from '../composables/useDocSweepReadiness'
 
-type DocSweepSiteStatus = 'Not connected' | 'Verifying' | 'Ready' | 'Error'
+import type { ExcelDocument, FooterStatus, SaveResultsChoice } from '../types'
 
-type DocSweepSiteName = 'Vertiv' | 'Asset Library' | 'PD Cloud' | 'MASW'
-
-type FooterStatus = 'ready' | 'warning' | 'error'
-
-type SaveResultsChoice = 'save' | 'discard' | 'continue'
-
-type DocSweepSite = {
-  name: DocSweepSiteName
-  status: DocSweepSiteStatus
-  url: string
-  matchUrl: string
-  enabled: boolean
-}
-
-type SiteSummary = {
-  site: string
-  found: number
-  notFound: number
-  errors: number
-  total: number
-  elapsedMs: number
-}
-
-type ExcelDocument = {
-  row: number
-  controlNumber: string
-  masw: string
-  vertiv: string
-  assetLibrary: string
-  pdCloud: string
-}
+const {
+  sites,
+  isVerifying,
+  isSitesVerified,
+  verifySites: verifySitesInternal,
+  invalidateSiteVerification: invalidateSiteVerificationInternal,
+} = useDocSweepSites()
 
 const excelFile = ref('')
 const documents = ref<ExcelDocument[]>([])
 
-const isVerifying = ref(false)
 const isRunning = ref(false)
-const isSitesVerified = ref(false)
 const isSweepInitialized = ref(false)
 const isCancelRequested = ref(false)
 const showCancelDialog = ref(false)
 const showSaveResultsDialog = ref(false)
 const showSaveErrorDialog = ref(false)
 const isSearchFinishing = ref(false)
-const totalElapsedMs = ref(0)
-const elapsedTick = ref(Date.now())
 
 const sweepStatus = ref('Select an Excel file.')
-const currentSite = ref('-')
-const currentControlNumber = ref('-')
-const completedCount = ref(0)
-const totalCount = ref(0)
-const sweepDocuments = ref<ExcelDocument[]>([])
 const saveResultsChoice = ref<SaveResultsChoice | null>(null)
-let saveResultsResolver: ((choice: SaveResultsChoice) => void) | null = null
-let saveErrorResolver: ((saved: boolean) => void) | null = null
-let totalStartTime = 0
-let elapsedTimer: ReturnType<typeof setInterval> | null = null
-const siteStartTimes = new Map<string, number>()
+const saveErrorResolver = ref<((saved: boolean) => void) | null>(null)
 const footerStatus = ref<FooterStatus>('warning')
 
-const sites = ref<DocSweepSite[]>([
-  {
-    name: 'Vertiv',
-    status: 'Not connected',
-    url: 'https://www.vertiv.com/en-us/',
-    matchUrl: 'https://www.vertiv.com/en-us/',
-    enabled: true,
-  },
-  {
-    name: 'Asset Library',
-    status: 'Not connected',
-    url: 'https://asset-library.vertiv.com/#/home?tabName=HOME',
-    matchUrl: 'https://asset-library.vertiv.com/',
-    enabled: true,
-  },
-  {
-    name: 'PD Cloud',
-    status: 'Not connected',
-    url: 'https://egup.fa.us2.oraclecloud.com/fscmUI/faces/FndOverview?pageParams=fndGlobalItemNodeId%3DitemNode_product_management_product_development&fndGlobalItemNodeId=itemNode_product_management_product_development&_adf.ctrl-state=CTzs-5yoqQZV_1&_adf.no-new-window-redirect=true&_afrLoop=2780622838863036&_afrWindowMode=2&_afrWindowId=null&_afrFS=16&_afrMT=screen&_afrMFW=944&_afrMFH=882&_afrMFDW=1920&_afrMFDH=1080&_afrMFC=8&_afrMFCI=0&_afrMFM=0&_afrMFR=96&_afrMFG=0&_afrMFS=0&_afrMFO=0',
-    matchUrl:
-      'https://egup.fa.us2.oraclecloud.com/fscmUI/faces/FndOverview?pageParams=fndGlobalItemNodeId%3DitemNode_product_management_product_development&fndGlobalItemNodeId=itemNode_product_management_product_development',
-    enabled: true,
-  },
-  {
-    name: 'MASW',
-    status: 'Not connected',
-    url: 'https://amerplmpwiap01.int.vertivco.com/File_Display_MBD/faces/UserManualDisplay.xhtml',
-    matchUrl: 'https://amerplmpwiap01.int.vertivco.com/File_Display_MBD/faces/UserManualDisplay.xhtml',
-    enabled: true,
-  },
-])
-
-const summary = ref<SiteSummary[]>([
-  {
-    site: 'Vertiv',
-    found: 0,
-    notFound: 0,
-    errors: 0,
-    total: 0,
-    elapsedMs: 0,
-  },
-  {
-    site: 'Asset Library',
-    found: 0,
-    notFound: 0,
-    errors: 0,
-    total: 0,
-    elapsedMs: 0,
-  },
-  {
-    site: 'PD Cloud',
-    found: 0,
-    notFound: 0,
-    errors: 0,
-    total: 0,
-    elapsedMs: 0,
-  },
-  {
-    site: 'MASW',
-    found: 0,
-    notFound: 0,
-    errors: 0,
-    total: 0,
-    elapsedMs: 0,
-  },
-])
-
-const progress = computed(() => {
-  if (totalCount.value === 0) {
-    return 0
-  }
-
-  return Math.round((completedCount.value / totalCount.value) * 100)
+const {
+  totalElapsedMs,
+  elapsedTick,
+  startElapsedTimer,
+  stopElapsedTimer,
+  startSiteTimer,
+  stopSiteTimer,
+  clearSiteTimers,
+  formatElapsed,
+} = useDocSweepTimer((siteName, elapsedMs) => {
+  summary.value = summary.value.map(item =>
+    item.site === siteName
+      ? {
+          ...item,
+          elapsedMs,
+        }
+      : item,
+  )
 })
 
-const totalFound = computed(() => summary.value.reduce((total, item) => total + item.found, 0))
-
-const totalNotFound = computed(() => summary.value.reduce((total, item) => total + item.notFound, 0))
-
-const totalErrors = computed(() => summary.value.reduce((total, item) => total + item.errors, 0))
-
-const totalResults = computed(() => summary.value.reduce((total, item) => total + item.total, 0))
-
-const successRate = computed(() => {
-  if (totalResults.value === 0) {
-    return 0
-  }
-
-  return Math.round((totalFound.value / totalResults.value) * 1000) / 10
+const { enabledSites, canStartSweep, footerStatusMessage } = useDocSweepReadiness({
+  excelFile,
+  documentsLength: computed(() => documents.value.length),
+  sites,
+  isSitesVerified,
+  isRunning,
+  isSweepInitialized,
+  footerStatus,
+  sweepStatus,
 })
 
-const canStartSweep = computed(() => {
-  if (!excelFile.value.trim()) {
-    return false
-  }
+const {
+  currentSite,
+  currentControlNumber,
+  completedCount,
+  totalCount,
+  sweepDocuments,
+  summary,
+  progress,
+  totalFound,
+  totalNotFound,
+  totalErrors,
+  totalResults,
+  successRate,
+  initializeSweep,
+} = useDocSweepResults(
+  documents,
+  computed(() => enabledSites.value.length),
+)
 
-  if (documents.value.length === 0) {
-    return false
-  }
-
-  const enabledSites = sites.value.filter(site => site.enabled)
-
-  if (enabledSites.length === 0) {
-    return false
-  }
-
-  return isSitesVerified.value && enabledSites.every(site => site.status === 'Ready')
+const { saveResultsAsRecovery, saveResultsWithRecovery, retrySaveResults } = useDocSweepSave({
+  excelFile,
+  sweepDocuments,
+  enabledSites: computed(() => enabledSites.value.map(site => site.name)),
+  sweepStatus,
+  showSaveErrorDialog,
+  saveErrorResolver,
 })
 
-const footerStatusMessage = computed(() => {
-  if (footerStatus.value === 'error') {
-    return sweepStatus.value
-  }
+const { selectExcelFile } = useDocSweepExcel({
+  excelFile,
+  documents,
+  isSweepInitialized,
+  isSitesVerified,
+  footerStatus,
+  sweepStatus,
+  isRunning,
+})
 
-  if (isRunning.value) {
-    return sweepStatus.value
-  }
+const {
+  requestCancelSweep,
+  confirmCancelSweep,
+  saveCancelledResults,
+  discardSweepResults,
+  continueSweep,
+  waitForSaveResultsChoice,
+} = useDocSweepCancellation({
+  isRunning,
+  isCancelRequested,
+  isSearchFinishing,
+  showCancelDialog,
+  showSaveResultsDialog,
+  saveResultsChoice,
+  sweepStatus,
+})
 
-  if (isSweepInitialized.value) {
-    return sweepStatus.value
-  }
+const { runSweep } = useDocSweepSweep({
+  sweepDocuments,
+  enabledSites,
+  summary,
+  completedCount,
+  totalCount,
+  currentSite,
+  currentControlNumber,
+  sweepStatus,
+  isCancelRequested,
+  isSweepInitialized,
 
-  if (canStartSweep.value) {
-    return 'Ready to start sweep.'
-  }
+  startSiteTimer,
+  stopSiteTimer,
 
-  if (!excelFile.value.trim()) {
-    return 'Select an Excel file.'
-  }
+  waitForSaveResultsChoice,
+  saveResultsWithRecovery,
 
-  if (documents.value.length === 0) {
-    return 'Load a valid Excel file.'
-  }
+  onCancelSaveFailure: () => {
+    footerStatus.value = 'error'
+    sweepStatus.value = 'Unable to save results. Your collected results are still available.'
+    isRunning.value = false
+  },
 
-  const enabledSites = sites.value.filter(site => site.enabled)
+  onCancelSaved: () => {
+    sweepStatus.value = 'Sweep cancelled. Results collected so far were saved to Excel.'
+    footerStatus.value = 'ready'
+    isRunning.value = false
+  },
 
-  if (enabledSites.length === 0) {
-    return 'Select at least one site.'
-  }
-
-  if (!isSitesVerified.value) {
-    return 'Verify enabled sites before starting.'
-  }
-
-  if (!enabledSites.every(site => site.status === 'Ready')) {
-    return 'One or more enabled sites are not ready.'
-  }
-
-  return sweepStatus.value
+  onCancelDiscarded: () => {
+    sweepStatus.value = 'Sweep cancelled. Results were not saved.'
+    footerStatus.value = 'ready'
+    isRunning.value = false
+  },
 })
 
 async function showLogs(): Promise<void> {
@@ -227,376 +170,27 @@ async function openSite(url: string, matchUrl: string): Promise<void> {
 }
 
 async function verifySites(): Promise<void> {
-  if (isVerifying.value) {
-    return
-  }
-
-  isSitesVerified.value = false
-
-  const includedSites = sites.value.filter(site => site.enabled).map(site => site.name)
-
-  if (includedSites.length === 0) {
-    sweepStatus.value = 'Select at least one site to verify.'
-    return
-  }
-
-  isVerifying.value = true
   sweepStatus.value = 'Checking sites...'
 
-  for (const site of sites.value) {
-    if (site.enabled) {
-      site.status = 'Verifying'
-    } else {
-      site.status = 'Not connected'
-    }
+  const result = await verifySitesInternal()
+
+  if (!result.ok) {
+    footerStatus.value = 'error'
+    sweepStatus.value = result.error ?? 'One or more enabled sites are not ready.'
+    return
   }
 
-  try {
-    const result = await window.docsweep.verifySites(includedSites)
-
-    if (!result.ok) {
-      footerStatus.value = 'error'
-      sweepStatus.value = result.error ?? 'Site verification failed.'
-
-      for (const site of sites.value) {
-        if (site.enabled) {
-          site.status = 'Error'
-        }
-      }
-
-      return
-    }
-
-    for (const verification of result.results) {
-      const site = sites.value.find(item => item.name === verification.name)
-
-      if (!site) {
-        continue
-      }
-
-      site.status = verification.status
-    }
-
-    const allEnabledSitesReady =
-      result.results.length === includedSites.length && result.results.every(site => site.status === 'Ready')
-
-    isSitesVerified.value = allEnabledSitesReady
-
-    footerStatus.value = allEnabledSitesReady && canStartSweep.value ? 'ready' : 'warning'
-
-    sweepStatus.value = allEnabledSitesReady
-      ? 'All enabled sites are ready.'
-      : 'One or more enabled sites are not ready.'
-  } finally {
-    isVerifying.value = false
-  }
+  footerStatus.value = 'ready'
+  sweepStatus.value = 'All enabled sites are ready.'
 }
 
 function invalidateSiteVerification(): void {
-  isSitesVerified.value = false
+  invalidateSiteVerificationInternal()
+
   isSweepInitialized.value = false
-
-  for (const site of sites.value) {
-    if (!site.enabled) {
-      site.status = 'Not connected'
-    }
-  }
-
   footerStatus.value = 'warning'
   sweepStatus.value = 'Site configuration changed. Verify sites again.'
 }
-
-async function selectExcelFile(): Promise<void> {
-  if (isRunning.value) {
-    return
-  }
-
-  const result = await window.docsweep.selectExcelFile()
-
-  if (!result.ok || !result.filePath) {
-    return
-  }
-
-  const loadResult = await window.docsweep.loadExcel(result.filePath)
-
-  if (!loadResult.ok) {
-    excelFile.value = ''
-    documents.value = []
-    isSitesVerified.value = false
-    footerStatus.value = 'error'
-    sweepStatus.value = loadResult.error ?? 'Unable to load the Excel file.'
-
-    return
-  }
-
-  excelFile.value = result.filePath
-  documents.value = loadResult.documents
-  isSweepInitialized.value = false
-
-  isSitesVerified.value = false
-  footerStatus.value = 'warning'
-  sweepStatus.value = `Loaded ${documents.value.length} control number(s). Verify enabled sites before starting.`
-}
-
-async function saveSweepResults(): Promise<boolean> {
-  const documentsToSave = sweepDocuments.value.map(document => ({
-    row: document.row,
-    controlNumber: document.controlNumber,
-    masw: document.masw,
-    vertiv: document.vertiv,
-    assetLibrary: document.assetLibrary,
-    pdCloud: document.pdCloud,
-  }))
-
-  const enabledSites = sites.value.filter(site => site.enabled).map(site => site.name)
-
-  const result = await window.docsweep.saveExcel(excelFile.value, documentsToSave, enabledSites)
-
-  if (!result.ok) {
-    console.error('DocSweep Excel save failed:', result.message)
-    return false
-  }
-
-  return true
-}
-
-async function saveSweepResultsAs(): Promise<boolean> {
-  const dialogResult = await window.docsweep.saveExcelAs()
-
-  if (dialogResult.canceled || !dialogResult.ok || !dialogResult.filePath) {
-    return false
-  }
-
-  const documentsToSave = sweepDocuments.value.map(document => ({
-    row: document.row,
-    controlNumber: document.controlNumber,
-    masw: document.masw,
-    vertiv: document.vertiv,
-    assetLibrary: document.assetLibrary,
-    pdCloud: document.pdCloud,
-  }))
-
-  const enabledSites = sites.value.filter(site => site.enabled).map(site => site.name)
-
-  const saveResult = await window.docsweep.saveExcel(
-    excelFile.value,
-    documentsToSave,
-    enabledSites,
-    dialogResult.filePath,
-  )
-
-  if (!saveResult.ok) {
-    throw new Error(saveResult.message || 'Unable to save Excel file.')
-  }
-
-  return true
-}
-
-async function saveResultsAsRecovery(): Promise<void> {
-  try {
-    const saved = await saveSweepResultsAs()
-
-    if (!saved) {
-      // User cancelled Save As or the dialog did not complete.
-      // Keep the save-error dialog open so the results remain recoverable.
-      showSaveErrorDialog.value = true
-      return
-    }
-
-    showSaveErrorDialog.value = false
-
-    saveErrorResolver?.(true)
-    saveErrorResolver = null
-
-    footerStatus.value = 'ready'
-    sweepStatus.value = 'Sweep results saved successfully.'
-  } catch (error) {
-    console.error('DocSweep Save As failed:', error)
-
-    showSaveErrorDialog.value = true
-
-    sweepStatus.value = error instanceof Error ? error.message : 'Unable to save Excel file.'
-  }
-}
-
-async function saveResultsWithRecovery(): Promise<boolean> {
-  sweepStatus.value = 'Saving sweep results to Excel...'
-
-  try {
-    const saved = await saveSweepResults()
-
-    if (saved) {
-      return true
-    }
-
-    sweepStatus.value = 'Unable to save results to the current Excel file.'
-  } catch (error) {
-    console.error('DocSweep Excel save failed:', error)
-
-    sweepStatus.value = error instanceof Error ? error.message : 'Unable to save results to Excel.'
-  }
-
-  return await handleSaveFailure()
-}
-
-async function handleSaveFailure(): Promise<boolean> {
-  showSaveErrorDialog.value = true
-
-  return new Promise(resolve => {
-    saveErrorResolver = resolve
-  })
-}
-
-async function retrySaveResults(): Promise<void> {
-  showSaveErrorDialog.value = false
-
-  const saved = await saveSweepResults()
-
-  if (saved) {
-    saveErrorResolver?.(true)
-    saveErrorResolver = null
-    return
-  }
-
-  showSaveErrorDialog.value = true
-}
-
-function requestCancelSweep(): void {
-  if (!isRunning.value || showSaveResultsDialog.value || isSearchFinishing.value) {
-    return
-  }
-
-  showCancelDialog.value = true
-}
-
-function confirmCancelSweep(): void {
-  showCancelDialog.value = false
-
-  isCancelRequested.value = true
-  isSearchFinishing.value = true
-
-  sweepStatus.value = 'Cancellation requested. Finishing the current search...'
-}
-
-function saveCancelledResults(): void {
-  saveResultsChoice.value = 'save'
-  showSaveResultsDialog.value = false
-
-  saveResultsResolver?.('save')
-  saveResultsResolver = null
-}
-
-function discardSweepResults(): void {
-  saveResultsChoice.value = 'discard'
-  showSaveResultsDialog.value = false
-
-  saveResultsResolver?.('discard')
-  saveResultsResolver = null
-}
-
-function continueSweep(): void {
-  saveResultsChoice.value = 'continue'
-  isCancelRequested.value = false
-  isSearchFinishing.value = false
-  showSaveResultsDialog.value = false
-
-  saveResultsResolver?.('continue')
-  saveResultsResolver = null
-}
-
-function waitForSaveResultsChoice(): Promise<SaveResultsChoice> {
-  saveResultsChoice.value = null
-  showSaveResultsDialog.value = true
-
-  return new Promise(resolve => {
-    saveResultsResolver = resolve
-  })
-}
-
-function formatElapsed(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000)
-
-  const hours = Math.floor(totalSeconds / 3600)
-  const minutes = Math.floor((totalSeconds % 3600) / 60)
-  const seconds = totalSeconds % 60
-
-  if (hours > 0) {
-    return `${hours.toString().padStart(2, '0')}:${minutes
-      .toString()
-      .padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
-  }
-
-  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
-}
-
-function startElapsedTimer(): void {
-  totalStartTime = Date.now()
-  totalElapsedMs.value = 0
-  elapsedTick.value = Date.now()
-
-  if (elapsedTimer) {
-    clearInterval(elapsedTimer)
-  }
-
-  elapsedTimer = setInterval(() => {
-    elapsedTick.value = Date.now()
-
-    if (totalStartTime > 0) {
-      totalElapsedMs.value = Date.now() - totalStartTime
-    }
-
-    if (currentSite.value !== '-') {
-      const siteStartTime = siteStartTimes.get(currentSite.value)
-
-      if (siteStartTime) {
-        const elapsedMs = Date.now() - siteStartTime
-
-        summary.value = summary.value.map(item =>
-          item.site === currentSite.value
-            ? {
-                ...item,
-                elapsedMs,
-              }
-            : item,
-        )
-      }
-    }
-  }, 1000)
-}
-
-function stopElapsedTimer(): void {
-  if (elapsedTimer) {
-    clearInterval(elapsedTimer)
-    elapsedTimer = null
-  }
-
-  elapsedTick.value = Date.now()
-
-  if (totalStartTime > 0) {
-    totalElapsedMs.value = Date.now() - totalStartTime
-  }
-
-  if (currentSite.value !== '-') {
-    const siteStartTime = siteStartTimes.get(currentSite.value)
-
-    if (siteStartTime) {
-      const elapsedMs = Date.now() - siteStartTime
-
-      summary.value = summary.value.map(item =>
-        item.site === currentSite.value
-          ? {
-              ...item,
-              elapsedMs,
-            }
-          : item,
-      )
-    }
-  }
-}
-
-onUnmounted(() => {
-  stopElapsedTimer()
-})
 
 async function startSweep(): Promise<void> {
   if (!canStartSweep.value || isRunning.value) {
@@ -606,203 +200,40 @@ async function startSweep(): Promise<void> {
 
   isRunning.value = true
   startElapsedTimer()
-  siteStartTimes.clear()
+  clearSiteTimers()
   footerStatus.value = 'warning'
   isSweepInitialized.value = false
   isCancelRequested.value = false
   saveResultsChoice.value = null
 
-  completedCount.value = 0
-  currentSite.value = '-'
-  currentControlNumber.value = '-'
-
-  sweepDocuments.value = documents.value.map(document => ({
-    row: document.row,
-    controlNumber: document.controlNumber,
-    masw: document.masw,
-    vertiv: document.vertiv,
-    assetLibrary: document.assetLibrary,
-    pdCloud: document.pdCloud,
-  }))
-
-  const enabledSites = sites.value.filter(site => site.enabled)
-
-  totalCount.value = sweepDocuments.value.length * enabledSites.length
+  initializeSweep()
 
   try {
     if (sweepDocuments.value.length === 0) {
       throw new Error('No control numbers are available for the sweep.')
     }
 
-    if (enabledSites.length === 0) {
+    if (enabledSites.value.length === 0) {
       throw new Error('No enabled sites are available for the sweep.')
     }
 
-    isSweepInitialized.value = true
+    await runSweep()
 
-    // Reset results for all enabled sites.
-    summary.value = summary.value.map(item => {
-      return {
-        ...item,
-        found: 0,
-        notFound: 0,
-        errors: 0,
-        total: 0,
-        elapsedMs: 0,
-      }
-    })
-
-    for (let siteIndex = 0; siteIndex < enabledSites.length; siteIndex++) {
-      const site = enabledSites[siteIndex]
-      const siteStartTime = Date.now()
-      siteStartTimes.set(site.name, siteStartTime)
-      currentSite.value = site.name
-
-      sweepStatus.value = `Starting ${site.name} sweep...`
-
-      for (let documentIndex = 0; documentIndex < sweepDocuments.value.length; documentIndex++) {
-        const document = sweepDocuments.value[documentIndex]
-
-        if (isCancelRequested.value) {
-          const choice = await waitForSaveResultsChoice()
-
-          if (choice === 'continue') {
-            isCancelRequested.value = false
-
-            currentSite.value = site.name
-            currentControlNumber.value = document.controlNumber
-
-            sweepStatus.value = `Resuming ${site.name} search for ${document.controlNumber}...`
-
-            // Continue with the current document.
-          } else if (choice === 'save') {
-            const saved = await saveResultsWithRecovery()
-
-            if (!saved) {
-              footerStatus.value = 'error'
-              sweepStatus.value = 'Unable to save results. Your collected results are still available.'
-
-              isRunning.value = false
-              return
-            }
-
-            sweepStatus.value = 'Sweep cancelled. Results collected so far were saved to Excel.'
-
-            footerStatus.value = 'ready'
-            isRunning.value = false
-            return
-          } else {
-            sweepStatus.value = 'Sweep cancelled. Results were not saved.'
-
-            footerStatus.value = 'ready'
-            isRunning.value = false
-            return
-          }
-        }
-
-        currentControlNumber.value = document.controlNumber
-
-        sweepStatus.value = `Searching ${site.name} for ${document.controlNumber}...`
-
-        try {
-          const result = await window.docsweep.runSweep(site.name, document.controlNumber)
-
-          const resultValue =
-            !result.ok || result.status === 'Error' ? 'Error' : result.status === 'Found' ? 'Check' : 'NA'
-
-          if (site.name === 'MASW') {
-            document.masw = resultValue
-          } else if (site.name === 'Vertiv') {
-            document.vertiv = resultValue
-          } else if (site.name === 'Asset Library') {
-            document.assetLibrary = resultValue
-          } else if (site.name === 'PD Cloud') {
-            document.pdCloud = resultValue
-          }
-
-          summary.value = summary.value.map(item => {
-            if (item.site !== site.name) {
-              return item
-            }
-
-            if (!result.ok || result.status === 'Error') {
-              return {
-                ...item,
-                errors: item.errors + 1,
-                total: item.total + 1,
-              }
-            }
-
-            if (result.status === 'Found') {
-              return {
-                ...item,
-                found: item.found + 1,
-                total: item.total + 1,
-              }
-            }
-
-            return {
-              ...item,
-              notFound: item.notFound + 1,
-              total: item.total + 1,
-            }
-          })
-
-          sweepStatus.value = `Completed ${site.name} search for ${document.controlNumber}.`
-        } catch (error) {
-          summary.value = summary.value.map(item => {
-            if (item.site !== site.name) {
-              return item
-            }
-
-            return {
-              ...item,
-              errors: item.errors + 1,
-              total: item.total + 1,
-            }
-          })
-
-          console.error(`DocSweep ${site.name} failed for ${document.controlNumber}:`, error)
-
-          sweepStatus.value = `${site.name} search failed for ${document.controlNumber}.`
-        } finally {
-          completedCount.value += 1
-        }
-      }
-
-      const siteElapsedMs = Date.now() - siteStartTime
-
-      summary.value = summary.value.map(item =>
-        item.site === site.name
-          ? {
-              ...item,
-              elapsedMs: siteElapsedMs,
-            }
-          : item,
-      )
-
-      sweepStatus.value = `${site.name} sweep completed for ${sweepDocuments.value.length} control number(s).`
-    }
-
-    currentSite.value = '-'
-    currentControlNumber.value = '-'
-
-    const saved = await saveResultsWithRecovery()
-
-    if (!saved) {
-      footerStatus.value = 'error'
-      sweepStatus.value = 'Unable to save results. Your collected results are still available.'
+    if (!isRunning.value) {
       return
     }
 
-    sweepStatus.value =
-      `Sweep completed for ${sweepDocuments.value.length} control number(s) ` +
-      `across ${enabledSites.length} enabled site(s). Results saved to Excel.`
+    sweepStatus.value = 'Sweep complete. Saving results to Excel...'
 
-    footerStatus.value = 'ready'
+    const saved = await saveResultsWithRecovery()
+
+    if (saved) {
+      footerStatus.value = 'ready'
+      sweepStatus.value = 'Sweep complete. Results saved to Excel.'
+    }
   } catch (error) {
+    console.error('DocSweep sweep failed:', error)
     footerStatus.value = 'error'
-
     sweepStatus.value = error instanceof Error ? error.message : 'Sweep failed.'
   } finally {
     stopElapsedTimer()

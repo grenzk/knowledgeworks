@@ -66,7 +66,7 @@ async function executeSearch(page: Page, controlNumber: string): Promise<void> {
 
   await search.waitFor({
     state: 'visible',
-    timeout: 15_000,
+    timeout: 60_000,
   })
 
   /*
@@ -178,7 +178,7 @@ async function waitForSearchComplete(page: Page, controlNumber: string): Promise
         expected: controlNumber,
       },
       {
-        timeout: 15_000,
+        timeout: 60_000,
       },
     )
   } catch (error) {
